@@ -16,6 +16,8 @@ import mwxml
 import arrow
 from typing import Iterable, Iterator, Mapping, NamedTuple
 
+from .. import utils
+
 
 WIKIEPOCH = arrow.get(datetime.datetime(2001, 1, 15))
 EPOCH = arrow.get(datetime.datetime.fromtimestamp(0))
@@ -76,6 +78,8 @@ def process_lines(
     header = csv_header
 
     prevpage = None
+    i = 0
+    page_revisions = []
     for revision in dump:
 
         revision = dict(zip(header, revision))
@@ -127,7 +131,7 @@ def process_lines(
         # page = get value
 
         # ct = get value
-        # pt = get_value if prevpage is not None or EPOCH
+        # pt = get_value if prevpage is not None else EPOCH
 
         page = Page(revision['page_id'],
                     revision['page_title'],
@@ -138,44 +142,90 @@ def process_lines(
                     )
 
         utils.log("Processing", page.title)
-        for ts in timestamps:
 
-            import pdb
-            pdb.set_trace()
+        if prevpage is None or prevpage.id == page.id:
+            page_revisions.append(page)
+        else:
+            nrevisions = len(page_revisions)
+            sorted_revisions = sorted(page_revisions):
+            
+            while j < len(sorted_revisions):
+            for j in 
+                prevpage = None
 
-            if prevpage and prevpage != pagetitle:
-                # the previous revision is in the snapshot
+                # restart from zero with timestamps
+                if i >= len(timestamps):
+                    i = 0
+                    prevpage = None
 
-                if ct > ts:
-                    # the page did not exist at the time
-                    # check another timestamp
-                    continue
+                ct = page.revision.timestamp
+                pt = prevpage.revision.timestamp if prevpage else EPOCH
 
-                else:
-                    # ct <= ts
-                    # check another revision
-                    break
+                while i < len(timestamps):
+                    ts = timestamps[i]
 
-            else:
-                # prevpage is None or prevpage == pagetitle
-                if pt > ts:
-                    # jump to a new page. but before check the other
-                    # timestamps
-                    continue
+                    if not prevpage:
+                        # the previous revision is in the snapshot
+                        print("prevpage is None")
 
-                elif ct > ts:
-                    # the previous revision is in the snapshot
-                    # check another timestamp
-                    yield (page, ts)
-                    continue
+                        if ct > ts:
+                            # the page did not exist at the time
+                            # check another timestamp
 
-                else:
-                    # check another revision
-                    break
+                            print("ct {} > ts {}".format(ct, ts))
+                            i = i + 1
+                            # continue
 
-            # update step
-            # pt = ct
-            # prevpage = page
+                        else:
+                            # ct <= ts
+                            # check another revision
+                            print("ct {} <= ts {}".format(ct, ts))
+                            # update step
+                            pt = ct
+                            prevpage = page
+                            break
+
+                    elif prevpage.id != page.id:
+                        print("prevpage != page")
+
+                        # prevpage goes in each snapshot >= ts
+                        i = i + 1
+                        print("prevpage {} -> ts {}".format(prevpage, ts))
+                        yield (prevpage, ts)
+                        # continue
+
+                    else:
+
+                        # prevpage is not None and prevpage == page
+                        if pt > ts:
+                            # jump to a new page. but before check the other
+                            # timestamps
+
+                            print("pt {} > ts {}" .format(pt, ts))
+                            i = i + 1
+                            # continue
+
+                        elif ct > ts:
+                            # the previous revision is in the snapshot
+                            # check another timestamp
+                            print("ct {} > ts {}".format(ct, ts))
+
+                            i = i + 1
+                            if prevpage:
+                                yield (prevpage, ts)
+
+                        else:
+                            # check another revision
+                            print("ct {} <= ts {}, pt {} <= ts {}"
+                                  .format(ct, ts, pt, ts))
+                            # update step
+                            pt = ct
+                            prevpage = page
+                            break
+
+                # if i == len(timestamps):
+                #     import pdb
+                #     pdb.set_trace()
 
 
 def configure_subparsers(subparsers):
