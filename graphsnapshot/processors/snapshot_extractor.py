@@ -77,11 +77,13 @@ def process_lines(
     next(dump)
     header = csv_header
 
-    prevpage = None
+    dump_page = None
+    dump_prevpage = None
+
     i = 0
     page_revisions = []
+    is_last_revision = False
     for revision in dump:
-
         revision = dict(zip(header, revision))
         # Let:
         # prevpage  be the id of the page that we analyzed in the previous
@@ -133,30 +135,42 @@ def process_lines(
         # ct = get value
         # pt = get_value if prevpage is not None else EPOCH
 
-        page = Page(revision['page_id'],
-                    revision['page_title'],
-                    Revision(revision['revision_id'],
-                             revision['revision_parent_id'],
-                             arrow.get(revision['revision_timestamp'])
-                             )
-                    )
+        dump_page = Page(revision['page_id'],
+                         revision['page_title'],
+                         Revision(revision['revision_id'],
+                                  revision['revision_parent_id'],
+                                  arrow.get(revision['revision_timestamp'])
+                                  )
+                         )
 
-        utils.log("Processing", page.title)
+        if dump_prevpage is None or dump_prevpage.id != dump_page.id:
+            utils.log("Processing", dump_page.title)
 
-        if prevpage is None or prevpage.id == page.id:
-            page_revisions.append(page)
+        if dump_prevpage is None or dump_prevpage.id == dump_page.id:
+            utils.dot()
+            page_revisions.append(dump_page)
+            dump_prevpage = dump_page
+
         else:
-            nrevisions = len(page_revisions)
-            sorted_revisions = sorted(page_revisions):
-            
-            while j < len(sorted_revisions):
-            for j in 
-                prevpage = None
+            sorted_revisions = sorted(page_revisions,
+                                      key=lambda pg: pg.revision.timestamp)
 
-                # restart from zero with timestamps
-                if i >= len(timestamps):
-                    i = 0
-                    prevpage = None
+            dump_prevpage = dump_page
+            page_revisions = [dump_page]
+
+            j = 0
+            prevpage = None
+            i = 0
+            break_flag = False
+            while j < len(sorted_revisions):
+                page = sorted_revisions[j]
+
+                # if i == 0:
+                #     import pdb
+                #     pdb.set_trace()
+                # # restart from zero with timestamps
+                # if i >= len(timestamps):
+                #     i = 0
 
                 ct = page.revision.timestamp
                 pt = prevpage.revision.timestamp if prevpage else EPOCH
@@ -166,66 +180,67 @@ def process_lines(
 
                     if not prevpage:
                         # the previous revision is in the snapshot
-                        print("prevpage is None")
+                        # print("prevpage is None")
 
                         if ct > ts:
                             # the page did not exist at the time
                             # check another timestamp
 
-                            print("ct {} > ts {}".format(ct, ts))
+                            # print("ct {} > ts {}".format(ct, ts))
                             i = i + 1
                             # continue
 
                         else:
                             # ct <= ts
                             # check another revision
-                            print("ct {} <= ts {}".format(ct, ts))
+                            # print("ct {} <= ts {}".format(ct, ts))
+
                             # update step
-                            pt = ct
                             prevpage = page
-                            break
-
-                    elif prevpage.id != page.id:
-                        print("prevpage != page")
-
-                        # prevpage goes in each snapshot >= ts
-                        i = i + 1
-                        print("prevpage {} -> ts {}".format(prevpage, ts))
-                        yield (prevpage, ts)
-                        # continue
-
+                            j = j + 1
+                            # break
+                            if j < len(sorted_revisions):
+                                break_flag = True
                     else:
-
                         # prevpage is not None and prevpage == page
                         if pt > ts:
-                            # jump to a new page. but before check the other
-                            # timestamps
+                            # check the other timestamps
 
-                            print("pt {} > ts {}" .format(pt, ts))
+                            # print("pt {} > ts {}" .format(pt, ts))
                             i = i + 1
                             # continue
 
                         elif ct > ts:
                             # the previous revision is in the snapshot
                             # check another timestamp
-                            print("ct {} > ts {}".format(ct, ts))
+                            # print("ct {} > ts {}".format(ct, ts))
 
                             i = i + 1
-                            if prevpage:
-                                yield (prevpage, ts)
+                            # print("{} -> {}".format(prevpage, ts), end='')
+                            # print("- j: {}".format(j))
+                            yield (prevpage, ts)
 
                         else:
                             # check another revision
-                            print("ct {} <= ts {}, pt {} <= ts {}"
-                                  .format(ct, ts, pt, ts))
-                            # update step
-                            pt = ct
-                            prevpage = page
-                            break
+                            # print("ct {} <= ts {}, pt {} <= ts {}"
+                            #       .format(ct, ts, pt, ts))
 
-                # if i == len(timestamps):
-                #     import pdb
-                #     pdb.set_trace()
+                            # update step
+                            prevpage = page
+                            j = j + 1
+                            # break
+                            if j < len(sorted_revisions):
+                                break_flag = True
+
+                    if break_flag:
+                        break_flag = False
+                        break
+
+                    if j >= len(sorted_revisions):
+                        i = i + 1
+                        # print("--- {} -> {}".format(prevpage, ts), end='')
+                        # print("- j: {}".format(j))
+                        yield (page, ts)
 
 
 def configure_subparsers(subparsers):
