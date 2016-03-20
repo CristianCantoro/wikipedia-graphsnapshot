@@ -9,7 +9,6 @@ import collections
 import datetime
 import functools
 
-import fuzzywuzzy.process
 import jsonable
 import more_itertools
 import mwxml
