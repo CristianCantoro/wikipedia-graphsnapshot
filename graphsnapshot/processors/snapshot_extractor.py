@@ -17,6 +17,7 @@ import arrow
 from typing import Iterable, Iterator, Mapping, NamedTuple
 
 from .. import utils
+from .. import file_utils as fu
 
 
 WIKIEPOCH = arrow.get(datetime.datetime(2001, 1, 15))
@@ -70,7 +71,9 @@ def process_lines(
         timestamps: Iterable[arrow.arrow.Arrow],
         stats: Mapping,
         only_last_revision: bool) -> Iterator[list]:
-    """Extract foo from bar."""
+    """Assign each revision to the snapshot or snapshots to which they
+       belong.
+    """
 
     # skip header
     # header = next(dump)
@@ -82,9 +85,22 @@ def process_lines(
 
     i = 0
     page_revisions = []
+
+    old_revision = None
+    revision = None
     is_last_revision = False
-    for revision in dump:
-        revision = dict(zip(header, revision))
+
+    # equivalent to
+    # for revision in dump:
+    while True:
+        old_revision = revision
+        revision = next(dump, None)
+
+        if revision is None:
+                revision = old_revision
+                is_last_revision = True
+
+        revision_data = dict(zip(header, revision))
         # Let:
         # prevpage  be the id of the page that we analyzed in the previous
         #           revision.
@@ -135,42 +151,37 @@ def process_lines(
         # ct = get value
         # pt = get_value if prevpage is not None else EPOCH
 
-        dump_page = Page(revision['page_id'],
-                         revision['page_title'],
-                         Revision(revision['revision_id'],
-                                  revision['revision_parent_id'],
-                                  arrow.get(revision['revision_timestamp'])
-                                  )
-                         )
+        dump_page = Page(
+            revision_data['page_id'],
+            revision_data['page_title'],
+            Revision(revision_data['revision_id'],
+                     revision_data['revision_parent_id'],
+                     arrow.get(revision_data['revision_timestamp'])
+                     ))
 
         if dump_prevpage is None or dump_prevpage.id != dump_page.id:
             utils.log("Processing", dump_page.title)
 
-        if dump_prevpage is None or dump_prevpage.id == dump_page.id:
+        if not is_last_revision and \
+                (dump_prevpage is None or dump_prevpage.id == dump_page.id):
             utils.dot()
             page_revisions.append(dump_page)
             dump_prevpage = dump_page
 
         else:
+
             sorted_revisions = sorted(page_revisions,
                                       key=lambda pg: pg.revision.timestamp)
 
             dump_prevpage = dump_page
             page_revisions = [dump_page]
 
+            i = 0
             j = 0
             prevpage = None
-            i = 0
             break_flag = False
             while j < len(sorted_revisions):
                 page = sorted_revisions[j]
-
-                # if i == 0:
-                #     import pdb
-                #     pdb.set_trace()
-                # # restart from zero with timestamps
-                # if i >= len(timestamps):
-                #     i = 0
 
                 ct = page.revision.timestamp
                 pt = prevpage.revision.timestamp if prevpage else EPOCH
@@ -179,16 +190,15 @@ def process_lines(
                     ts = timestamps[i]
 
                     if not prevpage:
-                        # the previous revision is in the snapshot
-                        # print("prevpage is None")
+                        # page contains the first revision for this page
 
                         if ct > ts:
                             # the page did not exist at the time
                             # check another timestamp
-
                             # print("ct {} > ts {}".format(ct, ts))
+
                             i = i + 1
-                            # continue
+                            continue
 
                         else:
                             # ct <= ts
@@ -198,17 +208,17 @@ def process_lines(
                             # update step
                             prevpage = page
                             j = j + 1
-                            # break
+
                             if j < len(sorted_revisions):
-                                break_flag = True
+                                break
                     else:
-                        # prevpage is not None and prevpage == page
+
                         if pt > ts:
                             # check the other timestamps
-
                             # print("pt {} > ts {}" .format(pt, ts))
+
                             i = i + 1
-                            # continue
+                            continue
 
                         elif ct > ts:
                             # the previous revision is in the snapshot
@@ -216,9 +226,12 @@ def process_lines(
                             # print("ct {} > ts {}".format(ct, ts))
 
                             i = i + 1
+
                             # print("{} -> {}".format(prevpage, ts), end='')
-                            # print("- j: {}".format(j))
+                            # print(" - j: {}".format(j))
                             yield (prevpage, ts)
+
+                            continue
 
                         else:
                             # check another revision
@@ -228,19 +241,18 @@ def process_lines(
                             # update step
                             prevpage = page
                             j = j + 1
-                            # break
                             if j < len(sorted_revisions):
-                                break_flag = True
-
-                    if break_flag:
-                        break_flag = False
-                        break
+                                break
 
                     if j >= len(sorted_revisions):
                         i = i + 1
-                        # print("--- {} -> {}".format(prevpage, ts), end='')
-                        # print("- j: {}".format(j))
+
+                        # print("--- {} -> {}".format(page, ts), end='')
+                        # print(" - j: {}".format(j))
                         yield (page, ts)
+
+            if is_last_revision:
+                break
 
 
 def configure_subparsers(subparsers):
@@ -258,6 +270,11 @@ def configure_subparsers(subparsers):
              'yearly periodicity (default = "M").'
     )
     parser.add_argument(
+        '--last-date',
+        type=str,
+        help='Greatest timestamp in the dump.'
+    )
+    parser.add_argument(
         '--only-last-revision',
         action='store_true',
         help='Consider only the last revision for each page.',
@@ -268,8 +285,7 @@ def configure_subparsers(subparsers):
 
 def main(
         dump: Iterable[list],
-        features_output_h,
-        stats_output_h,
+        basename: str,
         args) -> None:
     """Main function that parses the arguments and writes the output."""
     stats = {
@@ -285,19 +301,42 @@ def main(
         },
     }
 
+    last_date = NOW
+    if args.last_date is not None:
+        # we add some margin to be safe
+        last_date = arrow.get(args.last_date)\
+                         .replace(days=2)\
+                         .replace(seconds=-1)
+        endtime = last_date.replace(**PERIODICITY[args.periodicity](1))
+
     period = PERIODICITY[args.periodicity]
     nperiods = NPERIODS[args.periodicity](DELTA.days)
     timestamps = [WIKIEPOCH.replace(**period(i))
                   for i in range(nperiods)
-                  if WIKIEPOCH.replace(**period(i)) <= NOW.replace(**period(1))
+                  if WIKIEPOCH.replace(**period(i)) <= endtime
                   ]
 
     writers = {}
-    for ts in timestamps:
-        filename = features_output_h.name.replace(".csv", '.{date}.csv'.format(
-            date=ts.format('YYYY-MM-DD')))
-        writer = csv.writer(features_output_h)
-        writers[ts] = writer
+    if args.dry_run:
+        pages_output = open(os.devnull, 'wt')
+        stats_output = open(os.devnull, 'wt')
+    else:
+        for ts in timestamps:
+            filename = str(args.output_dir_path /
+                           (basename + '.features.{date}.csv'))
+            filename = filename.format(date=ts.format('YYYY-MM-DD'))
+
+            pages_output = fu.output_writer(
+                path=filename,
+                compression=args.output_compression,
+            )
+            stats_output = fu.output_writer(
+                path=str(args.output_dir_path/(basename + '.stats.xml')),
+                compression=args.output_compression,
+            )
+
+            writer = csv.writer(pages_output)
+            writers[ts] = writer
 
     pages_generator = process_lines(
         dump,
