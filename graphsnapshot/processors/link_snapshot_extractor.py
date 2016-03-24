@@ -102,82 +102,86 @@ def process_lines(
     # for revision in dump:
     while True:
         old_revision = revision
-        revision = next(dump, None)
-
-        if revision is None:
-                revision = old_revision
-                is_last_revision = True
-
-        revision_data = dict(zip(header, revision))
-
-        dump_page = Page(
-            int(revision_data['page_id']),
-            revision_data['page_title'],
-            Revision(int(revision_data['revision_id']),
-                     int(revision_data['revision_parent_id'])
-                     if revision_data['revision_parent_id'] else None,
-                     revision_data['user_type'],
-                     revision_data['user_username'],
-                     revision_data['revision_minor'],
-                     arrow.get(revision_data['revision_timestamp']),
-                     Wikilink(revision_data['wikilink.link'],
-                              revision_data['wikilink.anchor'],
-                              revision_data['wikilink.section_name'],
-                              int(revision_data['wikilink.section_level']),
-                              int(revision_data['wikilink.section_number']),
-                              )))
-
-        # print("skip_page: {}".format(skip_page))
-
-        if dump_prevpage and skip_page and dump_prevpage.id == dump_page.id:
-            dump_prevpage = dump_page
-            continue
-        else:
-            skip_page = False
-
-        if dump_prevpage is None or dump_prevpage.id != dump_page.id:
-            utils.log("Processing ", dump_page.title)
-        else:
-            if dump_prevpage.revision.id != dump_page.revision.id:
-                utils.dot()
-
-        if dump_page.id not in pages_in_snapshot:
-            skip_page = True
-            dump_prevpage = dump_page
-
-            print(" ...skip", end='', file=sys.stderr, flush=True)
-            continue
-
-        if (is_last_revision and
-                (dump_page.page.id in pages_in_snapshot or
-                 dump_page.revision.id in revisions_in_snapshot)):
+        try:
+            revision = next(dump, None)
+        except:
             import pdb
             pdb.set_trace()
 
-            sorted_revisions = sorted(page_revisions,
-                                      key=lambda pg: pg.revision.timestamp)
+        # if revision is None:
+        #         revision = old_revision
+        #         is_last_revision = True
 
-            dump_prevpage = dump_page
-            page_revisions = [dump_page]
+        # revision_data = dict(zip(header, revision))
 
-            i = 0
-            j = 0
-            prevpage = None
-            break_flag = False
-            while j < len(sorted_revisions):
-                page = sorted_revisions[j]
+        # dump_page = Page(
+        #     int(revision_data['page_id']),
+        #     revision_data['page_title'],
+        #     Revision(int(revision_data['revision_id']),
+        #              int(revision_data['revision_parent_id'])
+        #              if revision_data['revision_parent_id'] else None,
+        #              revision_data['user_type'],
+        #              revision_data['user_username'],
+        #              revision_data['revision_minor'],
+        #              arrow.get(revision_data['revision_timestamp']),
+        #              Wikilink(revision_data['wikilink.link'],
+        #                       revision_data['wikilink.anchor'],
+        #                       revision_data['wikilink.section_name'],
+        #                       int(revision_data['wikilink.section_level']),
+        #                       int(revision_data['wikilink.section_number']),
+        #                       )))
 
-                ct = page.revision.timestamp
-                pt = prevpage.revision.timestamp if prevpage else EPOCH
+        # # print("skip_page: {}".format(skip_page))
 
-                while i < len(timestamps):
-                    ts = timestamps[i]
-                    yield (page, ts)
+        # if dump_prevpage and skip_page and dump_prevpage.id == dump_page.id:
+        #     dump_prevpage = dump_page
+        #     continue
+        # else:
+        #     skip_page = False
 
-                if is_last_revision:
-                    break
-        else:
-            dump_prevpage = dump_page
+        # if dump_prevpage is None or dump_prevpage.id != dump_page.id:
+        #     utils.log("Processing ", dump_page.title)
+        # else:
+        #     if dump_prevpage.revision.id != dump_page.revision.id:
+        #         utils.dot()
+
+        # if dump_page.id not in pages_in_snapshot:
+        #     skip_page = True
+        #     dump_prevpage = dump_page
+
+        #     print(" -> skip", end='', file=sys.stderr, flush=True)
+        #     continue
+
+        # if (is_last_revision and
+        #         (dump_page.page.id in pages_in_snapshot or
+        #          dump_page.revision.id in revisions_in_snapshot)):
+        #     import pdb
+        #     pdb.set_trace()
+
+        #     sorted_revisions = sorted(page_revisions,
+        #                               key=lambda pg: pg.revision.timestamp)
+
+        #     dump_prevpage = dump_page
+        #     page_revisions = [dump_page]
+
+        #     i = 0
+        #     j = 0
+        #     prevpage = None
+        #     break_flag = False
+        #     while j < len(sorted_revisions):
+        #         page = sorted_revisions[j]
+
+        #         ct = page.revision.timestamp
+        #         pt = prevpage.revision.timestamp if prevpage else EPOCH
+
+        #         while i < len(timestamps):
+        #             ts = timestamps[i]
+        #             yield (page, ts)
+
+        #         if is_last_revision:
+        #             break
+        # else:
+        #     dump_prevpage = dump_page
 
 
 def configure_subparsers(subparsers):
