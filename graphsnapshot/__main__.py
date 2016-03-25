@@ -60,7 +60,7 @@ def main():
     for input_file_path in args.files:
         utils.log("Analyzing {}...".format(input_file_path))
 
-        dump = csv.reader(file_utils.open_csv_file(str(input_file_path)))
+        dump = file_utils.open_csv_file(str(input_file_path))
 
         basename = input_file_path.name
 

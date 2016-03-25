@@ -4,6 +4,7 @@ Extract links from list of revisions.
 The output format is csv.
 """
 
+import io
 import sys
 import csv
 import collections
@@ -64,7 +65,7 @@ csv_header = ('page_id',
               )
 
 snapshot_csv_header = ('page_id',
-                       'page_tile',
+                       'page_title',
                        'revision_id',
                        'revision_parent_id'
                        'timestamp'
@@ -98,52 +99,80 @@ def process_lines(
 
     skip_page = False
 
+    dump_prevpage_id = 0
+    dump_page_id = 0
     # equivalent to
     # for revision in dump:
     while True:
         old_revision = revision
+        revision = next(dump, None)
+
+        if revision is None:
+            revision = old_revision
+            is_last_revision = True
+            break
+
         try:
-            revision = next(dump, None)
-        except:
-            import pdb
-            pdb.set_trace()
+            dump_page_id = int(revision.split(',', 1)[0])
+        except Exception as e:
+            # import pdb
+            # pdb.set_trace()
+            pass
 
-        # if revision is None:
-        #         revision = old_revision
-        #         is_last_revision = True
+        if dump_prevpage == 0 or dump_prevpage_id != dump_page_id:
+            utils.log("Processing page id {}".format(dump_page_id))
 
-        # revision_data = dict(zip(header, revision))
+        if skip_page and dump_prevpage_id == dump_page_id:
+            dump_prevpage_id = dump_page_id
+            continue
 
-        # dump_page = Page(
-        #     int(revision_data['page_id']),
-        #     revision_data['page_title'],
-        #     Revision(int(revision_data['revision_id']),
-        #              int(revision_data['revision_parent_id'])
-        #              if revision_data['revision_parent_id'] else None,
-        #              revision_data['user_type'],
-        #              revision_data['user_username'],
-        #              revision_data['revision_minor'],
-        #              arrow.get(revision_data['revision_timestamp']),
-        #              Wikilink(revision_data['wikilink.link'],
-        #                       revision_data['wikilink.anchor'],
-        #                       revision_data['wikilink.section_name'],
-        #                       int(revision_data['wikilink.section_level']),
-        #                       int(revision_data['wikilink.section_number']),
-        #                       )))
+        if dump_page_id not in pages_in_snapshot:
+            skip_page = True
+            dump_prevpage_id = dump_page_id
 
-        # # print("skip_page: {}".format(skip_page))
+            print(" -> skip", end='', file=sys.stderr, flush=True)
+            continue
+        else:
+            skip_page = False
 
-        # if dump_prevpage and skip_page and dump_prevpage.id == dump_page.id:
-        #     dump_prevpage = dump_page
-        #     continue
-        # else:
-        #     skip_page = False
+            revcsv = [el for el in csv.reader(io.StringIO(revision))][0]
+            revision_data = dict(zip(header, revcsv))
 
-        # if dump_prevpage is None or dump_prevpage.id != dump_page.id:
-        #     utils.log("Processing ", dump_page.title)
-        # else:
-        #     if dump_prevpage.revision.id != dump_page.revision.id:
-        #         utils.dot()
+            try:
+                dump_page = Page(
+                    int(revision_data['page_id']),
+                    revision_data['page_title'],
+                    Revision(
+                        int(revision_data['revision_id']),
+                        int(revision_data['revision_parent_id'])
+                        if revision_data['revision_parent_id'] else None,
+                        revision_data['user_type'],
+                        revision_data['user_username'],
+                        revision_data['revision_minor'],
+                        arrow.get(revision_data['revision_timestamp']),
+                        Wikilink(
+                            revision_data['wikilink.link'],
+                            revision_data['wikilink.anchor'],
+                            revision_data['wikilink.section_name'],
+                            int(revision_data['wikilink.section_level']),
+                            int(revision_data['wikilink.section_number']),
+                            )))
+
+            except Exception as exc:
+                # import pdb
+                # pdb.set_trace()
+                pass
+
+            if dump_prevpage_id == 0 or dump_prevpage_id != dump_page_id:
+                page_title = " ({})".format(dump_page.title)
+                print(page_title, end='', file=sys.stderr)
+
+            if dump_prevpage and \
+                    dump_prevpage.revision.id != dump_page.revision.id:
+                utils.dot()
+
+            dump_prevpage_id = dump_page_id
+            dump_prevpage = dump_page
 
         # if dump_page.id not in pages_in_snapshot:
         #     skip_page = True
