@@ -35,6 +35,7 @@ Revision = NamedTuple('Revision', [
     ('parent_id', int),
     ('user_type', str),
     ('username', str),
+    ('user_id', int),
     ('minor', bool),
     ('timestamp', arrow.arrow.Arrow),
     ('wikilink', Wikilink)
@@ -48,84 +49,95 @@ Page = NamedTuple('Page', [
 ])
 
 
-csv_header = ('page_id',
-              'page_title',
-              'revision_id',
-              'revision_parent_id',
-              'revision_timestamp',
-              'user_type',
-              'user_username',
-              'user_id',
-              'revision_minor',
-              'wikilink.link',
-              'wikilink.anchor',
-              'wikilink.section_name',
-              'wikilink.section_level',
-              'wikilink.section_number',
-              )
-
-snapshot_csv_header = ('page_id',
-                       'page_title',
-                       'revision_id',
-                       'revision_parent_id'
-                       'timestamp'
-                       )
+output_csv_header = ('page_id',
+                     'page_title',
+                     'revision_id',
+                     'revision_parent_id',
+                     'revision_timestamp',
+                     'user_type',
+                     'user_username',
+                     'user_id',
+                     'revision_minor',
+                     'wikilink.link',
+                     'wikilink.anchor',
+                     'wikilink.section_name',
+                     'wikilink.section_level',
+                     'wikilink.section_number',
+                     'wikinlink.is_active'
+                     )
 
 
 def process_lines(
         dump: Iterable[list],
-        date: arrow.arrow.Arrow,
         pages_in_snapshot: set,
-        revisions_in_snapshot: set,
-        stats: Mapping) -> Iterator[list]:
-    """Assign each revision to the snapshot or snapshots to which they
+        pagetitles_in_snapshot: set,
+        revisions_in_snapshot: set) -> Iterator[list]:
+    """Assign each revision to the snapshot to which they
        belong.
     """
-
     # skip header
-    # header = next(dump)
     next(dump)
-    header = csv_header
 
     dump_page = None
     dump_prevpage = None
 
-    i = 0
-    page_revisions = []
-
-    old_revision = None
-    revision = None
-    is_last_revision = False
+    old_linkline = None
+    linkline = None
 
     skip_page = False
 
     dump_prevpage_id = 0
     dump_page_id = 0
-    # equivalent to
-    # for revision in dump:
-    while True:
-        old_revision = revision
-        revision = next(dump, None)
+    dump_prevpage_revision_id = 0
+    dump_page_revision_id = 0
 
-        if revision is None:
-            revision = old_revision
-            is_last_revision = True
+    # -------------------------------------------------------------------------
+    # OUTLINE OF THE ALGORITHM
+    #
+    # * read a line at a time from the input file, we call each line a linkline
+    #   (because each line of the input has a wikilink)
+    #
+    # * if the linkline has a page and revision id that are contained in the
+    #   snapshot process them, otherwise skip
+    # -------------------------------------------------------------------------
+
+    # Loop over all lines, this is equivalent to
+    # for link in dump:
+    while True:
+        old_linkline = linkline
+        linkline = next(dump, None)
+
+        if linkline is None:
+            # this is the last line, end loop.
             break
 
+        # Split the line to get page id and revision id, if something goes
+        # wrong we ignore that line.
+        revsplit = linkline.split(',', 3)
         try:
-            dump_page_id = int(revision.split(',', 1)[0])
-        except Exception as e:
-            # import pdb
-            # pdb.set_trace()
-            pass
+            dump_page_id = int(revsplit[0])
+            dump_page_revision_id = int(revsplit[2])
 
-        if dump_prevpage == 0 or dump_prevpage_id != dump_page_id:
-            utils.log("Processing page id {}".format(dump_page_id))
+        # if IndexError (list index out of range) or ValueError (invalid
+        # literal for int()) are raised then skip the line
+        except (IndexError, ValueError):
+            continue
 
+        # if the id is the same as the previous and we decided to skip the page
+        # we can continue to the next linkine
         if skip_page and dump_prevpage_id == dump_page_id:
             dump_prevpage_id = dump_page_id
             continue
 
+        # The code below code is executed when we encounter a new page id for
+        # the first time.
+
+        # Print page id
+        if dump_prevpage == 0 or dump_prevpage_id != dump_page_id:
+            utils.log("Processing page id {}".format(dump_page_id))
+
+        # If the page id is not in the set of the page ids contained in this
+        # snapshot we set skip_page to true so that we skip it.
         if dump_page_id not in pages_in_snapshot:
             skip_page = True
             dump_prevpage_id = dump_page_id
@@ -133,84 +145,90 @@ def process_lines(
             print(" -> skip", end='', file=sys.stderr, flush=True)
             continue
         else:
+            # This page id is contained in this snapshot
             skip_page = False
 
-            revcsv = [el for el in csv.reader(io.StringIO(revision))][0]
-            revision_data = dict(zip(header, revcsv))
+            # This revision id is not contained in this snapshot, so we should
+            # check another line.
+            # Each snapshot should have at most one revision for each page.
+            # It may happen that a page is in the snapshot because it
+            # existed at the time, but it had no links in it.
+            # See this case:
+            # https://en.wikipedia.org/w/index.php\
+            #   ?title=BoMis&direction=next&oldid=237880
+            if dump_page_revision_id not in revisions_in_snapshot:
+                dump_prevpage_id = dump_page_id
+                continue
+            else:
 
-            try:
-                dump_page = Page(
-                    int(revision_data['page_id']),
-                    revision_data['page_title'],
-                    Revision(
-                        int(revision_data['revision_id']),
-                        int(revision_data['revision_parent_id'])
-                        if revision_data['revision_parent_id'] else None,
-                        revision_data['user_type'],
-                        revision_data['user_username'],
-                        revision_data['revision_minor'],
-                        arrow.get(revision_data['revision_timestamp']),
-                        Wikilink(
-                            revision_data['wikilink.link'],
-                            revision_data['wikilink.anchor'],
-                            revision_data['wikilink.section_name'],
-                            int(revision_data['wikilink.section_level']),
-                            int(revision_data['wikilink.section_number']),
-                            )))
+                # this linkline is from a page and a revision that is contained
+                # in the snapshot
+                try:
+                    # We read the line a CSV reader and let it do the
+                    # splitting work.
+                    revcsv = [el
+                              for el in csv.reader(io.StringIO(linkline))][0]
+                except csv.Error:
+                    dump_prevpage_id = dump_page_id
+                    continue
 
-            except Exception as exc:
-                # import pdb
-                # pdb.set_trace()
-                pass
+                # Mapping from the input csv
+                # 'page_id', 0
+                # 'page_title', 1
+                # 'revision_id', 2
+                # 'revision_parent_id', 3
+                # 'revision_timestamp', 4
+                # 'user_type', 5
+                # 'user_username', 6
+                # 'user_id', 7
+                # 'revision_minor', 8
+                # 'wikilink.link', 9
+                # 'wikilink.anchor', 10
+                # 'wikilink.section_name', 11
+                # 'wikilink.section_level', 12
+                # 'wikilink.section_number' 13
+                dump_page = Page(int(revcsv[0]),
+                                 revcsv[1],
+                                 Revision(int(revcsv[2]),
+                                          int(revcsv[3])
+                                          if revcsv[3] else None,
+                                          revcsv[5],
+                                          revcsv[6],
+                                          revcsv[7],
+                                          revcsv[8],
+                                          revcsv[4],
+                                          Wikilink(revcsv[9],
+                                                   revcsv[10],
+                                                   revcsv[11],
+                                                   int(revcsv[12]),
+                                                   int(revcsv[13]),
+                                                   )))
 
-            if dump_prevpage_id == 0 or dump_prevpage_id != dump_page_id:
-                page_title = " ({})".format(dump_page.title)
-                print(page_title, end='', file=sys.stderr)
+                # Print pagetitle for each diferent revision analyzed, that is
+                # at most once.
+                if dump_prevpage_revision_id != dump_page_revision_id:
+                    # we print the page title in parenthesys
+                    page_title = " ({})".format(dump_page.title)
+                    print(page_title, end='', file=sys.stderr)
 
-            if dump_prevpage and \
-                    dump_prevpage.revision.id != dump_page.revision.id:
+                # print a dot for each link analyzed
                 utils.dot()
 
-            dump_prevpage_id = dump_page_id
-            dump_prevpage = dump_page
+                wikilink = (dump_page.revision.wikilink.link
+                            .capitalize()
+                            .strip()
+                            )
+                wikilink = ' '.join(wikilink.split())
 
-        # if dump_page.id not in pages_in_snapshot:
-        #     skip_page = True
-        #     dump_prevpage = dump_page
+                active_link = 0
+                if wikilink in pagetitles_in_snapshot:
+                    active_link = 1
 
-        #     print(" -> skip", end='', file=sys.stderr, flush=True)
-        #     continue
+                yield (dump_page, active_link)
 
-        # if (is_last_revision and
-        #         (dump_page.page.id in pages_in_snapshot or
-        #          dump_page.revision.id in revisions_in_snapshot)):
-        #     import pdb
-        #     pdb.set_trace()
-
-        #     sorted_revisions = sorted(page_revisions,
-        #                               key=lambda pg: pg.revision.timestamp)
-
-        #     dump_prevpage = dump_page
-        #     page_revisions = [dump_page]
-
-        #     i = 0
-        #     j = 0
-        #     prevpage = None
-        #     break_flag = False
-        #     while j < len(sorted_revisions):
-        #         page = sorted_revisions[j]
-
-        #         ct = page.revision.timestamp
-        #         pt = prevpage.revision.timestamp if prevpage else EPOCH
-
-        #         while i < len(timestamps):
-        #             ts = timestamps[i]
-        #             yield (page, ts)
-
-        #         if is_last_revision:
-        #             break
-        # else:
-        #     dump_prevpage = dump_page
+                dump_prevpage_id = dump_page_id
+                dump_prevpage_revision_id = dump_page_revision_id
+                dump_prevpage = dump_page
 
 
 def configure_subparsers(subparsers):
@@ -252,6 +270,17 @@ def main(
 
     date = arrow.get(args.date)
 
+    snapshot_infile = fu.open_csv_file(args.snapshot_file)
+    snapshot_reader = csv.reader(fu.open_csv_file(snapshot_infile))
+
+    pages_in_snapshot = set()
+    revisions_in_snapshot = set()
+    pagetitles_in_snapshot = set()
+    for row_data in snapshot_reader:
+        pages_in_snapshot.add(int(row_data[0]))
+        pagetitles_in_snapshot.add(row_data[1].capitalize())
+        revisions_in_snapshot.add(int(row_data[2]))
+
     if args.dry_run:
         pages_output = open(os.devnull, 'wt')
         stats_output = open(os.devnull, 'wt')
@@ -269,30 +298,32 @@ def main(
             compression=args.output_compression,
         )
 
-        writer = csv.writer(pages_output)
-
-    snapshot_infile = fu.open_csv_file(args.snapshot_file)
-    snapshot_reader = csv.reader(fu.open_csv_file(snapshot_infile))
-
-    pages_in_snapshot = set()
-    revisions_in_snapshot = set()
-    for row_data in snapshot_reader:
-        pages_in_snapshot.add(int(row_data[0]))
-        revisions_in_snapshot.add(int(row_data[2]))
+    writer = csv.writer(pages_output)
 
     pages_generator = process_lines(
         dump,
-        date=date,
         pages_in_snapshot=pages_in_snapshot,
+        pagetitles_in_snapshot=pagetitles_in_snapshot,
         revisions_in_snapshot=revisions_in_snapshot,
-        stats=stats,
     )
 
-    for page in pages_generator:
+    writer.writerow(output_csv_header)
+
+    for page, active_link in pages_generator:
         writer.writerow((
             page.id,
             page.title,
             page.revision.id,
             page.revision.parent_id,
             page.revision.timestamp,
+            page.revision.user_type,
+            page.revision.username,
+            page.revision.user_id,
+            page.revision.minor,
+            page.revision.wikilink.link,
+            page.revision.wikilink.anchor,
+            page.revision.wikilink.section_name,
+            page.revision.wikilink.section_level,
+            page.revision.wikilink.section_number,
+            active_link
         ))
