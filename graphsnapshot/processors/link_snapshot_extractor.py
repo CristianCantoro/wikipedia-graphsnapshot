@@ -14,6 +14,7 @@ import functools
 import jsonable
 import more_itertools
 import mwxml
+import regex
 import arrow
 from typing import Iterable, Iterator, Mapping, NamedTuple, Optional
 
@@ -49,6 +50,10 @@ Page = NamedTuple('Page', [
 ])
 
 
+splitline_re = regex.compile(
+    r'''^([0-9]{2,}),.+?,([0-9]+),''', regex.VERBOSE)
+
+
 output_csv_header = ('page_id',
                      'page_title',
                      'revision_id',
@@ -65,6 +70,10 @@ output_csv_header = ('page_id',
                      'wikilink.section_number',
                      'wikinlink.is_active'
                      )
+
+
+def first_uppercase(string: str) -> str:
+    return string[0].upper() + string[1:]
 
 
 def process_lines(
@@ -113,16 +122,12 @@ def process_lines(
 
         # Split the line to get page id and revision id, if something goes
         # wrong we ignore that line.
-        revsplit = linkline.split(',', 3)
-        try:
-            dump_page_id = int(revsplit[0])
-            dump_page_revision_id = int(revsplit[2])
-
-        # if IndexError (list index out of range) or ValueError (invalid
-        # literal for int()) are raised then skip the line
-        except (IndexError, ValueError):
+        revmatch = splitline_re.match(linkline)
+        if revmatch is not None:
+            dump_page_id = int(revmatch.group(1))
+            dump_page_revision_id = int(revmatch.group(2))
+        else:
             continue
-
         # if the id is the same as the previous and we decided to skip the page
         # we can continue to the next linkine
         if skip_page and dump_prevpage_id == dump_page_id:
@@ -214,8 +219,7 @@ def process_lines(
                 # print a dot for each link analyzed
                 utils.dot()
 
-                wikilink = (dump_page.revision.wikilink.link
-                            .capitalize()
+                wikilink = (first_uppercase(dump_page.revision.wikilink.link)
                             .strip()
                             )
                 wikilink = ' '.join(wikilink.split())
@@ -278,7 +282,7 @@ def main(
     pagetitles_in_snapshot = set()
     for row_data in snapshot_reader:
         pages_in_snapshot.add(int(row_data[0]))
-        pagetitles_in_snapshot.add(row_data[1].capitalize())
+        pagetitles_in_snapshot.add(first_uppercase(row_data[1]))
         revisions_in_snapshot.add(int(row_data[2]))
 
     if args.dry_run:
