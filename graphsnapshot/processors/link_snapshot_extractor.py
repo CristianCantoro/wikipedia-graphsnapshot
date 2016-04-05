@@ -73,7 +73,14 @@ output_csv_header = ('page_id',
 
 
 def first_uppercase(string: str) -> str:
-    return string[0].upper() + string[1:]
+    """
+    Make the first charachter of a str "string" uppercase and leave the rest
+    unchanged.
+    """
+    if len(string) > 0:
+        return string[0].upper() + string[1:]
+    else:
+        return ''
 
 
 def process_lines(
