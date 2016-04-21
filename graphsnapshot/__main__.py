@@ -41,6 +41,7 @@ def get_args():
     subparsers = parser.add_subparsers(help='sub-commands help')
     processors.snapshot_extractor.configure_subparsers(subparsers)
     processors.link_snapshot_extractor.configure_subparsers(subparsers)
+    processors.match_id.configure_subparsers(subparsers)
 
     parsed_args = parser.parse_args()
     if 'func' not in parsed_args:
