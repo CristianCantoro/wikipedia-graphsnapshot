@@ -133,7 +133,8 @@ def process_lines(
                     )
         wikilink = ' '.join(wikilink.split())
 
-        if dump_page.revision.wikilink.is_active:
+        if dump_page.revision.wikilink.is_active \
+                and wikilink in pages_in_snapshot:
             wikilink_id = pages_in_snapshot[wikilink]
             yield (dump_page.id, wikilink_id)
 
