@@ -104,23 +104,27 @@ def process_lines(
         # 'wikilink.section_level', 12
         # 'wikilink.section_number' 13
         # 'wikilink.is_active' 14
-        dump_page = Page(int(linkline[0]),
-                         linkline[1],
-                         Revision(int(linkline[2]),
-                                  int(linkline[3])
-                                  if linkline[3] else None,
-                                  linkline[5],
-                                  linkline[6],
-                                  linkline[7],
-                                  linkline[8],
-                                  linkline[4],
-                                  Wikilink(linkline[9],
-                                           linkline[10],
-                                           linkline[11],
-                                           int(linkline[12]),
-                                           int(linkline[13]),
-                                           int(linkline[14]),
-                                           )))
+        try:
+            dump_page = Page(int(linkline[0]),
+                             linkline[1],
+                             Revision(int(linkline[2]),
+                                      int(linkline[3])
+                                      if linkline[3] else None,
+                                      linkline[5],
+                                      linkline[6],
+                                      linkline[7],
+                                      linkline[8],
+                                      linkline[4],
+                                      Wikilink(linkline[9],
+                                               linkline[10],
+                                               linkline[11],
+                                               int(linkline[12]),
+                                               int(linkline[13]),
+                                               int(linkline[14]),
+                                               )))
+        except ValueError:
+            continue
+
         # Print page id
         if dump_prevpage is None or dump_prevpage.id != dump_page.id:
             utils.log("Processing page id {}".format(dump_page.id))
