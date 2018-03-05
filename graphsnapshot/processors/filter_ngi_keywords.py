@@ -20,56 +20,36 @@ from typing import Iterable, Iterator, Mapping, NamedTuple, Optional
 
 from .. import utils
 from .. import file_utils as fu
+from .. import dumper
 
 
-Wikilink = NamedTuple('Wikilink', [
-    ('link', str),
-    ('anchor', int),
-    ('section_name', str),
-    ('section_level', int),
-    ('section_number', int),
-])
+csv_header = ('page_id',
+              'page_title',
+              'revision_id',
+              'revision_parent_id',
+              'revision_timestamp',
+              'user_type',
+              'user_username',
+              'user_id',
+              'revision_minor',
+              'wikilink.link',
+              'wikilink.anchor',
+              'wikilink.section_name',
+              'wikilink.section_level',
+              'wikilink.section_number',
+              'wikinlink.is_active'
+              )
 
 
-Revision = NamedTuple('Revision', [
-    ('id', int),
-    ('parent_id', int),
-    ('user_type', str),
-    ('username', str),
-    ('user_id', int),
-    ('minor', bool),
-    ('timestamp', arrow.arrow.Arrow),
-    ('wikilink', Wikilink)
-])
-
-
-Page = NamedTuple('Page', [
-    ('id', int),
-    ('title', str),
-    ('revision', Revision),
-])
-
-
-splitline_re = regex.compile(
-    r'''^([0-9]{2,}),.+?,([0-9]+),''', regex.VERBOSE)
-
-
-output_csv_header = ('page_id',
-                     'page_title',
-                     'revision_id',
-                     'revision_parent_id',
-                     'revision_timestamp',
-                     'user_type',
-                     'user_username',
-                     'user_id',
-                     'revision_minor',
-                     'wikilink.link',
-                     'wikilink.anchor',
-                     'wikilink.section_name',
-                     'wikilink.section_level',
-                     'wikilink.section_number',
-                     'wikinlink.is_active'
-                     )
+stats_template = \
+'''<stats>
+    <performance>
+        <start_time>${stats['performance']['start_time']}</start_time>
+        <end_time>${stats['performance']['end_time']}</end_time>
+        <revisions_analyzed>${stats['performance']['revisions_analyzed']}</revisions_analyzed>
+    </performance>
+</stats>
+'''
 
 
 def first_uppercase(string: str) -> str:
@@ -85,27 +65,18 @@ def first_uppercase(string: str) -> str:
 
 def process_lines(
         dump: Iterable[list],
-        pages_in_snapshot: set,
-        pagetitles_in_snapshot: set,
-        revisions_in_snapshot: set) -> Iterator[list]:
+        stats: Mapping,
+        seed: set,
+        compiled_redirects: set) -> Iterator[list]:
     """Assign each revision to the snapshot to which they
        belong.
     """
+
     # skip header
     next(dump)
 
-    dump_page = None
-    dump_prevpage = None
-
     old_linkline = None
     linkline = None
-
-    skip_page = False
-
-    dump_prevpage_id = 0
-    dump_page_id = 0
-    dump_prevpage_revision_id = 0
-    dump_page_revision_id = 0
 
     # -------------------------------------------------------------------------
     # OUTLINE OF THE ALGORITHM
@@ -113,8 +84,6 @@ def process_lines(
     # * read a line at a time from the input file, we call each line a linkline
     #   (because each line of the input has a wikilink)
     #
-    # * if the linkline has a page and revision id that are contained in the
-    #   snapshot process them, otherwise skip
     # -------------------------------------------------------------------------
 
     # Loop over all lines, this is equivalent to
@@ -127,31 +96,22 @@ def process_lines(
             # this is the last line, end loop.
             break
 
-        # Split the line to get page id and revision id, if something goes
-        # wrong we ignore that line.
-        revmatch = splitline_re.match(linkline)
-        if revmatch is not None:
-            dump_page_id = int(revmatch.group(1))
-            dump_page_revision_id = int(revmatch.group(2))
-        else:
-            continue
+        stats['performance']['revisions_analyzed'] += 1
+        page_title = first_uppercase(linkline[1].replace(' ', '_'))
+        link_title = linkline[9]
 
-        # Print page id
-        if dump_prevpage == 0 or dump_prevpage_id != dump_page_id:
-            utils.log("Processing page id {}".format(dump_page_id))
+        if page_title in seed and \
+            any(reg.match(link_title)
+                for reg in compiled_redirects):
 
-        yield (dump_page, active_link)
-
-        dump_prevpage_id = dump_page_id
-        dump_prevpage_revision_id = dump_page_revision_id
-        dump_prevpage = dump_page
+            yield linkline
 
 
 def configure_subparsers(subparsers):
     """Configure a new subparser ."""
     parser = subparsers.add_parser(
-        'link-snapshot-extractor',
-        help='Extract link snapshots from page list',
+        'filter-ngi-keywords',
+        help='Filter NGI keywords',
     )
     parser.add_argument(
         '--date',
@@ -159,9 +119,14 @@ def configure_subparsers(subparsers):
         help='Reference date'
     )
     parser.add_argument(
-        '--snapshot-file',
+        '--seed',
         type=str,
-        help='Snapshot file.'
+        help='File containing the list of titles of the seed articles.'
+    )
+    parser.add_argument(
+        '--redirects',
+        type=str,
+        help='File containing the list of titles of the redirects.'
     )
     parser.set_defaults(func=main)
 
@@ -178,24 +143,15 @@ def main(
             'revisions_analyzed': 0,
             'pages_analyzed': 0,
         },
-        'section_names': {
-            'global': collections.Counter(),
-            'last_revision': collections.Counter(),
-        },
     }
 
-    date = arrow.get(args.date)
+    seed = set([term.strip() for term in open(args.seed).readlines()])
+    redirects = set([term.strip() for term in open(args.redirects).readlines()])
 
-    snapshot_infile = fu.open_csv_file(args.snapshot_file)
-    snapshot_reader = csv.reader(fu.open_csv_file(snapshot_infile))
-
-    pages_in_snapshot = set()
-    revisions_in_snapshot = set()
-    pagetitles_in_snapshot = set()
-    for row_data in snapshot_reader:
-        pages_in_snapshot.add(int(row_data[0]))
-        pagetitles_in_snapshot.add(first_uppercase(row_data[1]))
-        revisions_in_snapshot.add(int(row_data[2]))
+    compiled_redirects = set()
+    for pattern in redirects:
+        full_pattern = r'^{}$'.format(pattern)
+        compiled_redirects.add(regex.compile(full_pattern, regex.IGNORECASE))
 
     if args.dry_run:
         pages_output = open(os.devnull, 'wt')
@@ -203,7 +159,7 @@ def main(
     else:
         filename = str(args.output_dir_path /
                        (basename + '.features.{date}.csv'))
-        filename = filename.format(date=date.format('YYYY-MM-DD'))
+        filename = filename.format(date=args.date)
 
         pages_output = fu.output_writer(
             path=filename,
@@ -214,32 +170,26 @@ def main(
             compression=args.output_compression,
         )
 
-    writer = csv.writer(pages_output)
+    with pages_output:
+        stats['performance']['start_time'] = datetime.datetime.utcnow()
 
-    pages_generator = process_lines(
-        dump,
-        pages_in_snapshot=pages_in_snapshot,
-        pagetitles_in_snapshot=pagetitles_in_snapshot,
-        revisions_in_snapshot=revisions_in_snapshot,
-    )
+        dump = csv.reader(dump)
+        pages_generator = process_lines(
+            dump,
+            stats,
+            seed=seed,
+            compiled_redirects=compiled_redirects,
+        )
 
-    writer.writerow(output_csv_header)
+        writer = csv.writer(pages_output)
+        writer.writerow(csv_header)
+        for linkline in pages_generator:
+            writer.writerow(linkline)
+        stats['performance']['end_time'] = datetime.datetime.utcnow()
 
-    for page, active_link in pages_generator:
-        writer.writerow((
-            page.id,
-            page.title,
-            page.revision.id,
-            page.revision.parent_id,
-            page.revision.timestamp,
-            page.revision.user_type,
-            page.revision.username,
-            page.revision.user_id,
-            page.revision.minor,
-            page.revision.wikilink.link,
-            page.revision.wikilink.anchor,
-            page.revision.wikilink.section_name,
-            page.revision.wikilink.section_level,
-            page.revision.wikilink.section_number,
-            active_link
-        ))
+    with stats_output:
+        dumper.render_template(
+            stats_template,
+            stats_output,
+            stats=stats,
+        )

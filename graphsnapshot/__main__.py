@@ -17,7 +17,7 @@ def get_args():
         metavar='FILE',
         type=pathlib.Path,
         nargs='+',
-        help='XML Wikidump file to parse. It accepts only 7z.',
+        help='Wikidump file to parse, can be compressed.',
     )
     parser.add_argument(
         'output_dir_path',
@@ -42,6 +42,7 @@ def get_args():
     processors.snapshot_extractor.configure_subparsers(subparsers)
     processors.link_snapshot_extractor.configure_subparsers(subparsers)
     processors.match_id.configure_subparsers(subparsers)
+    processors.filter_ngi_keywords.configure_subparsers(subparsers)
 
     parsed_args = parser.parse_args()
     if 'func' not in parsed_args:
