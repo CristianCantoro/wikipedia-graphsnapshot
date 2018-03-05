@@ -66,7 +66,7 @@ def first_uppercase(string: str) -> str:
 def process_lines(
         dump: Iterable[list],
         stats: Mapping,
-        seed: set,
+        net: set,
         compiled_redirects: set) -> Iterator[list]:
     """Assign each revision to the snapshot to which they
        belong.
@@ -100,7 +100,7 @@ def process_lines(
         page_title = first_uppercase(linkline[1].replace(' ', '_'))
         link_title = linkline[9]
 
-        if page_title in seed and \
+        if page_title in net and \
             any(reg.match(link_title)
                 for reg in compiled_redirects):
 
@@ -115,16 +115,19 @@ def configure_subparsers(subparsers):
     )
     parser.add_argument(
         '--date',
+        required=True,
         type=str,
         help='Reference date'
     )
     parser.add_argument(
-        '--seed',
+        '--net',
+        required=True,
         type=str,
-        help='File containing the list of titles of the seed articles.'
+        help='File containing the list of titles of the filtered net articles.'
     )
     parser.add_argument(
         '--redirects',
+        required=True,
         type=str,
         help='File containing the list of titles of the redirects.'
     )
@@ -145,7 +148,7 @@ def main(
         },
     }
 
-    seed = set([term.strip() for term in open(args.seed).readlines()])
+    net = set([term.strip() for term in open(args.net).readlines()])
     redirects = set([term.strip() for term in open(args.redirects).readlines()])
 
     compiled_redirects = set()
@@ -177,7 +180,7 @@ def main(
         pages_generator = process_lines(
             dump,
             stats,
-            seed=seed,
+            net=net,
             compiled_redirects=compiled_redirects,
         )
 
