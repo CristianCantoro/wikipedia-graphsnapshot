@@ -43,6 +43,7 @@ def get_args():
     processors.link_snapshot_extractor.configure_subparsers(subparsers)
     processors.match_id.configure_subparsers(subparsers)
     processors.filter_ngi_keywords.configure_subparsers(subparsers)
+    processors.match_ngi_id.configure_subparsers(subparsers)
 
     parsed_args = parser.parse_args()
     if 'func' not in parsed_args:
