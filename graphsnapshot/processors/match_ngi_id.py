@@ -12,6 +12,7 @@ import collections
 import datetime
 import functools
 
+import pathlib
 import jsonable
 import more_itertools
 import mwxml
@@ -71,7 +72,10 @@ stats_template = \
         <revisions_analyzed>${stats['performance']['revisions_analyzed']}</revisions_analyzed>
     </performance>
     <links>
-        <good_links>${stats['links']['good_links']}</good_links>
+        <good_links>
+            <direct>${stats['links']['good_links']['direct']}</direct>
+            <redirect>${stats['links']['good_links']['redirect']}</redirect>
+        </good_links>
         <bad_links>
             % for tkey, tval in stats['links']['bad_links'].items():
                 <term count=${tval}>${tkey}</term>
@@ -97,7 +101,8 @@ def first_uppercase(string: str) -> str:
 def process_lines(
         dump: Iterable[list],
         stats: Mapping,
-        pages_in_snapshot: str) -> Iterator[list]:
+        pages_in_snapshot: Mapping,
+        redirects: Mapping) -> Iterator[list]:
     """Assign each revision to the snapshot to which they
        belong.
     """
@@ -169,8 +174,23 @@ def process_lines(
         wikilink = '_'.join(wikilink.split())
 
         if wikilink in pages_in_snapshot:
-            stats['links']['good_links'] += 1
-            wikilink_id = pages_in_snapshot[wikilink]
+
+            if wikilink in redirects:
+                stats['links']['good_links']['redirect'] += 1
+
+                new_wikilink = redirects[wikilink]
+                new_wikilink_id = pages_in_snapshot.get(new_wikilink, None)
+
+                if new_wikilink_id is None:
+                    stats['links']['good_links']['redirect'] -= 1
+                    stats['links']['bad_links'][new_wikilink] += 1
+
+                wikilink = new_wikilink
+                wikilink_id = new_wikilink_id
+            else:
+                stats['links']['good_links']['direct'] += 1
+                wikilink_id = pages_in_snapshot[wikilink]
+
         else:
             stats['links']['bad_links'][wikilink] += 1
 
@@ -188,8 +208,13 @@ def configure_subparsers(subparsers):
     )
     parser.add_argument(
         '--snapshot-dir',
-        type=str,
-        help='Snapshot file.'
+        type=pathlib.Path,
+        help='Directory with snapshot files.'
+    )
+    parser.add_argument(
+        '--redirects',
+        type=pathlib.Path,
+        help='List with redirects.'
     )
     parser.set_defaults(func=main)
 
@@ -206,7 +231,10 @@ def main(
             'revisions_analyzed': 0,
         },
         'links': {
-            'good_links': 0,
+            'good_links': {
+                'direct': 0,
+                'redirect': 0,
+            },
             'bad_links': collections.defaultdict(int),
         }
     }
@@ -224,6 +252,17 @@ def main(
         date=date.format('YYYY-MM-DD'))
     snapshot_infile = fu.open_csv_file(snapshot_filename)
     snapshot_reader = csv.reader(snapshot_infile)
+
+    redirects = dict()
+    with open(str(args.redirects), 'r') as redirects_file:
+        reader = csv.reader(redirects_file, delimiter='\t')
+
+        # skip header
+        next(reader)
+
+        redirects = dict((k,v) for k,v in reader)
+
+    # import ipdb; ipdb.set_trace()
 
     pages_in_snapshot = dict()
     for row_data in snapshot_reader:
@@ -258,7 +297,8 @@ def main(
         pages_generator = process_lines(
             dump,
             stats,
-            pages_in_snapshot=pages_in_snapshot
+            pages_in_snapshot=pages_in_snapshot,
+            redirects=redirects,
         )
 
         writer = csv.writer(pages_output, delimiter='\t')
