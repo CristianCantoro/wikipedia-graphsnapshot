@@ -191,11 +191,12 @@ def process_lines(
                 stats['links']['good_links']['direct'] += 1
                 wikilink_id = pages_in_snapshot[wikilink]
 
+            yield (dump_page.id,dump_page.title, wikilink_id, wikilink,
+                   original_wikilink)
+
         else:
             stats['links']['bad_links'][wikilink] += 1
 
-        yield (dump_page.id,dump_page.title, wikilink_id, wikilink,
-               original_wikilink)
 
         dump_prevpage = dump_page
 
