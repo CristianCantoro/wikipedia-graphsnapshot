@@ -1,16 +1,14 @@
 graphsnapshot
 -------------
 
-Extract links from the Wikipedia dump.
-
-
+Process links and other data extracted from the Wikipedia dump.
 
 ## License
 
 This project is realease unde GPL v3 (or later).
 
 ```
-graphsnapshot: Extract links and other data from the Wikipedia dump.
+graphsnapshot: process links and other data extracted from the Wikipedia dump.
 
 Copyright (C) 2018 Critian Consonni for:
 * Eurecat - Centre Tecnològic de Catalunya
