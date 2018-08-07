@@ -1,7 +1,7 @@
--e git+https://github.com/CristianCantoro/compressed_stream.git@553be6f2bef74fc511e55b743615b0ab2fdd564e#egg=compressed_stream-master
 arrow==0.7.0
 decorator==4.0.9
 docopt==0.6.2
+-e git+https://github.com/CristianCantoro/compressed_stream.git@553be6f2bef74fc511e55b743615b0ab2fdd564e#egg=compressed_stream-master
 fuzzywuzzy==0.8.0
 jsonable==0.3.1
 Mako==1.0.2
