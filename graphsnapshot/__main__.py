@@ -73,6 +73,11 @@ def main():
             args,
         )
 
+        # explicitly close output files
+        dump.close()
+
+        utils.log("Done Analyzing {}.".format(input_file_path))
+
 
 if __name__ == '__main__':
     main()
