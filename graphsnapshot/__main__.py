@@ -44,6 +44,7 @@ def get_args():
     processors.match_id.configure_subparsers(subparsers)
     processors.filter_ngi_keywords.configure_subparsers(subparsers)
     processors.match_ngi_id.configure_subparsers(subparsers)
+    processors.redirect_resolver.configure_subparsers(subparsers)
 
     parsed_args = parser.parse_args()
     if 'func' not in parsed_args:
@@ -73,7 +74,7 @@ def main():
             args,
         )
 
-        # explicitly close output files
+        # explicitly close input files
         dump.close()
 
         utils.log("Done Analyzing {}.".format(input_file_path))
