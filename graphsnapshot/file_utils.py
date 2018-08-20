@@ -1,10 +1,11 @@
 """Main module that parses command line arguments."""
-import codecs
-import os
-import subprocess
-import gzip
 import io
+import os
 import csv
+import bz2
+import gzip
+import codecs
+import subprocess
 
 import pathlib
 from typing import IO, Optional, Union
@@ -37,6 +38,8 @@ def output_writer(path: str, compression: Optional[str]):
     """Write data to a compressed file."""
     if compression == '7z':
         return compressor_7z(path + '.7z')
+    elif compression == 'bz2':
+        return bz2.open(path + '.bz2', 'wt', encoding='utf-8')
     elif compression == 'gzip':
         return gzip.open(path + '.gz', 'wt', encoding='utf-8')
     else:

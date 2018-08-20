@@ -27,7 +27,7 @@ def get_args():
     )
     parser.add_argument(
         '--output-compression',
-        choices={None, '7z', 'gzip'},
+        choices={None, '7z', 'bz2', 'gzip'},
         required=False,
         default=None,
         help='Output compression format.',
