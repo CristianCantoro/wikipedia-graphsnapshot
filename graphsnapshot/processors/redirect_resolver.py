@@ -4,6 +4,7 @@ Extract snapshots from list of revisions.
 The output format is csv.
 """
 
+import os
 import csv
 import mwxml
 import arrow
