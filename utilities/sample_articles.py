@@ -86,10 +86,10 @@ def main():
 
     ids = get_first_column(infile, cast_type=int, skip_header=skip_header)
     
-    samplearticles = sorted(random.sample(ids, numa))
+    samplearticles = set(random.sample(ids, numa))
 
     if args.print_ids:
-        for _id in samplearticles:
+        for _id in sorted(samplearticles):
             print(_id)
 
     infp = cs.functions.open_file(cs.functions.file(infile))
