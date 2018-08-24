@@ -93,10 +93,14 @@ def main():
             print(_id)
 
     infp = cs.functions.open_file(cs.functions.file(infile))
+    header = None
     if skip_header:
-        next(infp)
+        header = next(infp)
 
     with open(output, 'w+') as outfp:
+        if header:
+            outfp.write(header)
+
         for line in infp:
             line_id = int(line.split(',')[0])
 
