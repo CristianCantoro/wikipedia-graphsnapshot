@@ -369,7 +369,7 @@ def main(
     assert (snapshot_date > DATE_START and snapshot_date < DATE_NOW)
     # snapshot_date = snapshot_date.strftime('%Y-%m-%d')
 
-    redirects_history = read_redirects(redirects, snapshot_date, stats)
+    redirects_history = read_redirects(redirects, snapshot_date)
 
     snapshot_title2id = read_snapshot_pages(inputfile_full_path)
     
