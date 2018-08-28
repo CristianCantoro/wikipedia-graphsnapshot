@@ -26,6 +26,7 @@ from .. import dumper
 NLINES = 10000
 
 
+MAX_RECURSION = 10
 DATE_START = arrow.get('2001-01-16', 'YYYY-MM')
 DATE_NOW = arrow.now()
 
@@ -96,8 +97,7 @@ stats_template = '''
 
 def read_redirects(
     redirects: pathlib.Path,
-    snapshot_date: arrow.Arrow,
-    stats: Mapping) -> Mapping:
+    snapshot_date: arrow.Arrow) -> Mapping:
 
     redirects_file = fu.open_csv_file(str(redirects))
     redirects_reader = csv.reader(redirects_file)
@@ -169,8 +169,6 @@ def read_redirects(
         else:
             redirect_prevline = redirect_line
 
-        stats['performance']['redirects_analyzed'] += 1
-
     return redirects_history
 
 
@@ -208,11 +206,18 @@ def normalize_title(title: str) -> str:
 
 def resolve_redirect(
     page: Iterable[list],
+    stats: Mapping,
     snapshot_title2id: Mapping,
-    redirects_history: Mapping) -> Iterator[list]:
+    redirects_history: Mapping,
+    count_recursive_calls: int) -> Iterator[list]:
+
+    stats['performance']['redirects_analyzed'] += 1
+
+    count_recursive_calls = count_recursive_calls + 1
 
     result = None
     page_id = int(page[0])
+    page_title = page[1]
 
     if page_id in redirects_history:
         # page is a redirect
@@ -220,6 +225,9 @@ def resolve_redirect(
         target_title = redirects_history[page_id].target
         target_title = normalize_title(target_title)
         target_id = snapshot_title2id.get(target_title, None)
+
+        if page_id == target_id:
+            return page
 
         if target_title == '#NOREDIRECT':
             # page is not a redirect, return page as it is
@@ -249,11 +257,17 @@ def resolve_redirect(
                                target_rev_parent_id,
                                target_rev_timestamp
                                ]
-                result = resolve_redirect(
-                            page=target_page,
-                            snapshot_title2id=snapshot_title2id,
-                            redirects_history=redirects_history
-                            )
+                if count_recursive_calls <= MAX_RECURSION:
+                    result = resolve_redirect(
+                                page=target_page,
+                                stats=stats,
+                                snapshot_title2id=snapshot_title2id,
+                                redirects_history=redirects_history,
+                                count_recursive_calls=count_recursive_calls
+                                )
+                else:
+                    import ipdb; ipdb.set_trace()
+
                 # if int(target_id) != int(result[0]):
                 #     import ipdb; ipdb.set_trace()
     else:
@@ -285,9 +299,11 @@ def process_lines(
 
         counter = counter + 1
         # get only page id and page title
-        resolved = resolve_redirect(snapshot_page,
-                                    snapshot_title2id,
-                                    redirects_history
+        resolved = resolve_redirect(page=snapshot_page,
+                                    stats=stats,
+                                    snapshot_title2id=snapshot_title2id,
+                                    redirects_history=redirects_history,
+                                    count_recursive_calls=0,
                                     )
 
         stats['performance']['pages_analyzed'] += 1
@@ -363,7 +379,7 @@ def main(
         stats,
         snapshot_title2id=snapshot_title2id,
         redirects_history=redirects_history
-    )
+        )
 
     writer.writerow(csv_header_output)
     for page in pages_generator:
