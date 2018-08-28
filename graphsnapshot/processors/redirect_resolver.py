@@ -206,6 +206,7 @@ def normalize_title(title: str) -> str:
 
 def resolve_redirect(
     page: Iterable[list],
+    original_page: Iterable[list],
     stats: Mapping,
     snapshot_title2id: Mapping,
     redirects_history: Mapping,
@@ -260,13 +261,14 @@ def resolve_redirect(
                 if count_recursive_calls <= MAX_RECURSION:
                     result = resolve_redirect(
                                 page=target_page,
+                                original_page=page,
                                 stats=stats,
                                 snapshot_title2id=snapshot_title2id,
                                 redirects_history=redirects_history,
                                 count_recursive_calls=count_recursive_calls
                                 )
                 else:
-                    import ipdb; ipdb.set_trace()
+                    result = original_page
 
                 # if int(target_id) != int(result[0]):
                 #     import ipdb; ipdb.set_trace()
@@ -300,6 +302,7 @@ def process_lines(
         counter = counter + 1
         # get only page id and page title
         resolved = resolve_redirect(page=snapshot_page,
+                                    original_page=snapshot_page,
                                     stats=stats,
                                     snapshot_title2id=snapshot_title2id,
                                     redirects_history=redirects_history,
