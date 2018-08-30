@@ -5,18 +5,24 @@ The output format is csv.
 """
 
 import csv
-import collections
+import argparse
 import datetime
 import functools
+import collections
 
+import arrow
+import regex
+import mwxml
 import jsonable
 import more_itertools
-import mwxml
-import arrow
 from typing import Iterable, Iterator, Mapping, NamedTuple
 
 from .. import utils
 from .. import file_utils as fu
+
+
+snapshot_date_pattern = r'.+wiki-([0-9]{8})-pages-meta-history.+\.xml.*'
+SNAPSHOT_DATE_RE = regex.compile(snapshot_date_pattern)
 
 
 WIKIEPOCH = arrow.get(datetime.datetime(2001, 1, 15))
@@ -38,6 +44,22 @@ NPERIODS = {
     'M': lambda days: int(days/28) + 2,
     'y': lambda days: int(days/365) + 2
 }
+
+
+stats_template = '''
+<stats>
+    <performance>
+        <start_time>${stats['performance']['start_time'] | x}</start_time>
+        <end_time>${stats['performance']['end_time'] | x}</end_time>
+        <input>
+            <link_analyzed>${stats['performance']['link_analyzed'] | x}</link_analyzed>
+            <revisions_analyzed>${stats['performance']['revisions_analyzed'] | x}</revisions_analyzed>
+            <pages_analyzed>${stats['performance']['pages_analyzed'] | x}</pages_analyzed>
+        </input>
+    </performance>
+</stats>
+'''
+
 
 Revision = NamedTuple('Revision', [
     ('id', int),
@@ -69,14 +91,18 @@ def process_lines(
         dump: Iterable[list],
         timestamps: Iterable[arrow.arrow.Arrow],
         stats: Mapping,
-        only_last_revision: bool) -> Iterator[list]:
+        only_last_revision: bool,
+        skip_header: bool) -> Iterator[list]:
     """Assign each revision to the snapshot or snapshots to which they
        belong.
     """
 
+    dump = csv.reader(dump)
+
     # skip header
-    # header = next(dump)
-    next(dump)
+    if skip_header:
+        next(dump)
+
     header = csv_header
 
     dump_page = None
@@ -160,6 +186,7 @@ def process_lines(
 
         if dump_prevpage is None or dump_prevpage.id != dump_page.id:
             utils.log("Processing", dump_page.title)
+            stats['performance']['pages_analyzed'] += 1
 
         if not is_last_revision and \
                 (dump_prevpage is None or dump_prevpage.id == dump_page.id):
@@ -250,14 +277,18 @@ def process_lines(
                         # print(" - j: {}".format(j))
                         yield (page, ts)
 
+                stats['performance']['revisions_analyzed'] += 1
+
             if is_last_revision:
                 break
+
+        stats['performance']['link_analyzed'] += 1
 
 
 def configure_subparsers(subparsers):
     """Configure a new subparser ."""
     parser = subparsers.add_parser(
-        'snapshot-extractor',
+        'extract-snapshot',
         help='Extract snapshot from page list',
     )
     parser.add_argument(
@@ -269,9 +300,14 @@ def configure_subparsers(subparsers):
              'yearly periodicity (default = "M").'
     )
     parser.add_argument(
+        '--skip-header',
+        action='store_true',
+        help='Skip the first line of the input.'
+    )
+    parser.add_argument(
         '--last-date',
         type=str,
-        help='Greatest timestamp in the dump.'
+        help='Greatest timestamp in the dump [default: infer from input name].'
     )
     parser.add_argument(
         '--only-last-revision',
@@ -285,12 +321,13 @@ def configure_subparsers(subparsers):
 def main(
         dump: Iterable[list],
         basename: str,
-        args) -> None:
+        args: argparse.Namespace) -> None:
     """Main function that parses the arguments and writes the output."""
     stats = {
         'performance': {
             'start_time': None,
             'end_time': None,
+            'link_analyzed': 0,
             'revisions_analyzed': 0,
             'pages_analyzed': 0,
         },
@@ -299,14 +336,23 @@ def main(
             'last_revision': collections.Counter(),
         },
     }
+    stats['performance']['start_time'] = datetime.datetime.utcnow()
 
-    last_date = NOW
     if args.last_date is not None:
         # we add some margin to be safe
-        last_date = arrow.get(args.last_date)\
-                         .replace(days=2)\
-                         .replace(seconds=-1)
-        endtime = last_date.replace(**PERIODICITY[args.periodicity](1))
+        last_date = arrow.get(args.last_date)
+    else:
+        try:
+            snapdate_match = SNAPSHOT_DATE_RE.match(basename)
+            snapdate_str=snapdate_match.group(1)
+            last_date = arrow.get(snapdate_str, 'YYYYMMDD')
+        except:
+            raise ValueError("Could not infer date from snapshot name and "
+                             "no --last-date passed")
+
+    # we add some margin to be safe
+    last_date = last_date.replace(days=2).replace(seconds=-1)
+    endtime = last_date.replace(**PERIODICITY[args.periodicity](1))
 
     period = PERIODICITY[args.periodicity]
     nperiods = NPERIODS[args.periodicity](DELTA.days)
@@ -342,6 +388,7 @@ def main(
         timestamps=timestamps,
         stats=stats,
         only_last_revision=args.only_last_revision,
+        skip_header=args.skip_header
     )
 
     for page, ts in pages_generator:
@@ -352,3 +399,11 @@ def main(
             page.revision.parent_id,
             page.revision.timestamp,
         ))
+    stats['performance']['end_time'] = datetime.datetime.utcnow()
+
+    with stats_output_h:
+        dumper.render_template(
+            stats_template,
+            stats_output_h,
+            stats=stats,
+        )
