@@ -9,6 +9,7 @@ import argparse
 import datetime
 import functools
 import collections
+from io import StringIO
 
 import arrow
 import regex
@@ -97,8 +98,6 @@ def process_lines(
        belong.
     """
 
-    dump = csv.reader(dump)
-
     # skip header
     if skip_header:
         next(dump)
@@ -124,6 +123,12 @@ def process_lines(
         if revision is None:
                 revision = old_revision
                 is_last_revision = True
+
+        # read the line in a StringIO object and parse it with the csv module
+        try:
+            revision = [l for l in csv.reader(StringIO(revision))][0]
+        except csv.Error:
+            import ipdb; ipdb.set_trace()
 
         revision_data = dict(zip(header, revision))
         # Let:
