@@ -22,6 +22,9 @@ from .. import utils
 from .. import file_utils as fu
 
 
+NPRINTREVISION = 10000
+
+
 snapshot_date_pattern = r'.+wiki-([0-9]{8})-pages-meta-history.+\.xml.*'
 SNAPSHOT_DATE_RE = regex.compile(snapshot_date_pattern)
 
@@ -114,6 +117,8 @@ def process_lines(
     revision = None
     is_last_revision = False
 
+    counter = 0
+
     # equivalent to
     # for revision in dump:
     while True:
@@ -190,12 +195,17 @@ def process_lines(
                      ))
 
         if dump_prevpage is None or dump_prevpage.id != dump_page.id:
+            counter = 0
             utils.log("Processing", dump_page.title)
             stats['performance']['pages_analyzed'] += 1
 
         if not is_last_revision and \
                 (dump_prevpage is None or dump_prevpage.id == dump_page.id):
-            utils.dot()
+            counter = counter + 1
+
+            if counter % NPRINTREVISION == 1:
+                utils.dot()
+
             page_revisions.append(dump_page)
             dump_prevpage = dump_page
 
