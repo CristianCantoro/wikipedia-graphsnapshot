@@ -1,5 +1,5 @@
 arrow==0.7.0
--e git+https://github.com/CristianCantoro/compressed_stream.git@master#egg=compressed_stream
+-e git+git@github.com:CristianCantoro/compressed_stream.git@master#egg=compressed_stream
 decorator==4.0.9
 docopt==0.6.2
 fuzzywuzzy==0.8.0
