@@ -132,7 +132,7 @@ def process_lines(
         # read the line in a StringIO object and parse it with the csv module
         try:
             revision = [l for l in csv.reader(StringIO(revision))][0]
-        except csv.Error as err:
+        except (csv.Error, TypeError) as err:
             continue
 
         revision_data = dict(zip(header, revision))
