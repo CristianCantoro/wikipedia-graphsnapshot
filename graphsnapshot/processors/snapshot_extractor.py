@@ -235,6 +235,21 @@ def process_lines(
             sorted_revisions = sorted(page_revisions,
                                       key=lambda pg: pg.revision.timestamp)
 
+            # if we only want the sorted_revisions list is limited to the
+            # last element.
+
+            # Note: don't try to bee to smart and think that one can skip
+            # reading all revisions and just take the last that is encountered,
+            # that is when page.id changes, i.e.
+            #     when dump_prevpage.id != dump_page.id
+            # because as said in the previous comment we are not assured that
+            # all revisions will be in the correct order, so we still need to
+            # collect them all, sort them and take the last one.
+            if only_last_revision:
+                sorted_revisions = [sorted_revisions[-1]]
+
+            # we are not interested to the new page for the moment, put it in
+            # the list
             dump_prevpage = dump_page
             page_revisions = [dump_page]
 
