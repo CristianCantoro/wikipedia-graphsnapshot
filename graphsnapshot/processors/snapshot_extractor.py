@@ -20,15 +20,19 @@ from typing import Iterable, Iterator, Mapping, NamedTuple
 
 from .. import utils
 from .. import file_utils as fu
+from .. import dumper
 
 
+# print a dot each NPRINTREVISION revisions
 NPRINTREVISION = 10000
 
 
+# snapshot to infer the date from the input file
 snapshot_date_pattern = r'.+wiki-([0-9]{8})-pages-meta-history.+\.xml.*'
 SNAPSHOT_DATE_RE = regex.compile(snapshot_date_pattern)
 
 
+# Time variables
 WIKIEPOCH = arrow.get(datetime.datetime(2001, 1, 15))
 EPOCH = arrow.get(datetime.datetime.fromtimestamp(0))
 NOW = arrow.utcnow()
@@ -41,7 +45,6 @@ PERIODICITY = {
     'y': lambda n: {'years': n},
 }
 
-
 NPERIODS = {
     'd': lambda days: days + 2,
     'w': lambda days: int(days/7) + 2,
@@ -50,6 +53,7 @@ NPERIODS = {
 }
 
 
+# templates
 stats_template = '''
 <stats>
     <performance>
@@ -65,12 +69,12 @@ stats_template = '''
 '''
 
 
+# Revison and Page objects
 Revision = NamedTuple('Revision', [
     ('id', int),
     ('parent_id', int),
     ('timestamp', jsonable.Type),
 ])
-
 
 Page = NamedTuple('Page', [
     ('id', str),
@@ -79,6 +83,7 @@ Page = NamedTuple('Page', [
 ])
 
 
+# CSV header
 csv_header = ('page_id',
               'page_title',
               'revision_id',
