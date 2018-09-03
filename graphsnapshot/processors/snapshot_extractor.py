@@ -416,9 +416,9 @@ def main(
         ))
     stats['performance']['end_time'] = datetime.datetime.utcnow()
 
-    with stats_output_h:
+    with stats_output:
         dumper.render_template(
             stats_template,
-            stats_output_h,
+            stats_output,
             stats=stats,
         )
