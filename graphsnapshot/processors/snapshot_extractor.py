@@ -209,6 +209,10 @@ def process_lines(
             utils.log("Processing", dump_page.title)
             stats['performance']['pages_analyzed'] += 1
 
+        if dump_prevpage is None or \
+                dump_prevpage.revision.id != dump_page.revision.id:
+            stats['performance']['revisions_analyzed'] += 1
+
         if not is_last_revision and \
                 (dump_prevpage is None or dump_prevpage.id == dump_page.id):
             # it is not the last revision, futhermore two cases:
@@ -332,12 +336,11 @@ def process_lines(
                         # print(" - j: {}".format(j))
                         yield (page, ts)
 
-                stats['performance']['revisions_analyzed'] += 1
-
             if is_last_revision:
                 break_flag = True
 
-        stats['performance']['link_analyzed'] += 1
+        if not is_last_revision:
+            stats['performance']['link_analyzed'] += 1
 
 
 def configure_subparsers(subparsers):
