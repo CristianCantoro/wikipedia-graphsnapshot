@@ -83,7 +83,7 @@ Page = NamedTuple('Page', [
 ])
 
 
-# CSV header
+# CSV headers
 csv_header = ('page_id',
               'page_title',
               'revision_id',
@@ -94,6 +94,19 @@ csv_header = ('page_id',
               'user_id',
               'revision_minor'
               )
+
+
+# page.id,
+# page.title,
+# page.revision.id,
+# page.revision.parent_id,
+# page.revision.timestamp,
+csv_header_output = ('page_id',
+                     'page_title',
+                     'revision_id',
+                     'revision_parent_id',
+                     'revision_timestamp',
+                     )
 
 
 def process_lines(
@@ -448,6 +461,10 @@ def main(
         only_last_revision=args.only_last_revision,
         skip_header=args.skip_header
     )
+
+    # write headers in each output file
+    for ts in timestamps:
+        writers[ts].writerow(csv_header_output)
 
     for page, ts in pages_generator:
         writers[ts].writerow((
