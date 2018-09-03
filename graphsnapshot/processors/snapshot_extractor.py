@@ -199,12 +199,22 @@ def process_lines(
                      ))
 
         if dump_prevpage is None or dump_prevpage.id != dump_page.id:
+            # we are starting now or we have a new page
             counter = 0
             utils.log("Processing", dump_page.title)
             stats['performance']['pages_analyzed'] += 1
 
         if not is_last_revision and \
                 (dump_prevpage is None or dump_prevpage.id == dump_page.id):
+            # it is not the last revision, futhermore two cases:
+            #   * dump_prevpage is None: we are reading the first line of the
+            #     dump file
+            #   * dump_prevpage.id == dump_page.id we are reading a page whose
+            #     is is the same as the previous one we read
+            # so, either we just started or we are in the middle of the
+            # history of a page. What we do is we just add the revision to the
+            # list.
+
             counter = counter + 1
 
             if counter % NPRINTREVISION == 1:
@@ -214,7 +224,14 @@ def process_lines(
             dump_prevpage = dump_page
 
         else:
+            # cases:
+            #   * this is the last revision of the dump
+            #     (is_last_revision is True)
+            #   * we have changed to a new page (dump_prevpage is not None
+            #     and dump_prevpage.id != dump_page.id)
 
+            # sort all the revision by timestamp (they are not guaranted to be
+            # ordered)
             sorted_revisions = sorted(page_revisions,
                                       key=lambda pg: pg.revision.timestamp)
 
