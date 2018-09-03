@@ -116,12 +116,16 @@ def process_lines(
     old_revision = None
     revision = None
     is_last_revision = False
+    break_flag = False
 
     counter = 0
 
     # equivalent to
     # for revision in dump:
     while True:
+        if break_flag:
+            break
+
         old_revision = revision
         revision = next(dump, None)
 
@@ -220,7 +224,6 @@ def process_lines(
             i = 0
             j = 0
             prevpage = None
-            break_flag = False
             while j < len(sorted_revisions):
                 page = sorted_revisions[j]
 
@@ -295,7 +298,7 @@ def process_lines(
                 stats['performance']['revisions_analyzed'] += 1
 
             if is_last_revision:
-                break
+                break_flag = True
 
         stats['performance']['link_analyzed'] += 1
 
