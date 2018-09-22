@@ -4,5 +4,6 @@ from . import (
     match_id,
     filter_ngi_keywords,
     match_ngi_id,
-    redirect_resolver
+    redirect_resolver,
+    extraction_comparator,
 )
