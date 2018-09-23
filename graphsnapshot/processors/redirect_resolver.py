@@ -22,15 +22,20 @@ from .. import utils
 from .. import file_utils as fu
 from .. import dumper
 
+# print a dot each NPRINTREVISION revisions
+NPRINTREVISION = 10000
 
-NLINES = 10000
 
-
+# when resolving a redirect recurse at maximum MAX_RECURSION times
 MAX_RECURSION = 10
+
+
+# limit dates for our snapshot (the creation of Wikipedia and now)
 DATE_START = arrow.get('2001-01-16', 'YYYY-MM')
 DATE_NOW = arrow.now()
 
 
+# snapshot name regex
 re_snapshotname = re.compile(r'snapshot\.(\d{4}-\d{2}-\d{2})\.csv\.(.+)',
                              re.IGNORECASE | re.DOTALL)
 
@@ -116,7 +121,7 @@ def read_redirects(
     counter = 0
     print('\nReading redirects ', end=' ')
     for redirect in redirects_reader:
-        if counter % NLINES == 0:
+        if counter % NPRINTREVISION == 0:
             utils.dot()
         counter = counter + 1
 
@@ -183,7 +188,7 @@ def read_snapshot_pages(
     counter = 0
     print('\nReading snapshot ', end=' ')
     for line in snapshot_reader:
-        if counter % NLINES == 0:
+        if counter % NPRINTREVISION == 0:
             utils.dot()
         counter = counter + 1
 
@@ -193,15 +198,6 @@ def read_snapshot_pages(
         title2id[page_title] = page_id
 
     return title2id
-
-
-def normalize_title(title: str) -> str:
-    if len(title) > 1:
-        title = title[0].upper() + title[1:]
-    elif len(title) == 1:
-        title = title[0].upper()
-
-    return title.replace('_', ' ')
 
 
 def resolve_redirect(
@@ -224,7 +220,7 @@ def resolve_redirect(
         # page is a redirect
         redirect = redirects_history[page_id]
         target_title = redirects_history[page_id].target
-        target_title = normalize_title(target_title)
+        target_title = utils.normalize_wikititle(target_title)
         target_id = snapshot_title2id.get(target_title, None)
 
         if page_id == target_id:
@@ -296,7 +292,7 @@ def process_lines(
     counter = 0
     print('\nProcess snapshot ', end=' ')
     for snapshot_page in dump:
-        if counter % NLINES == 0:
+        if counter % NPRINTREVISION == 0:
             utils.dot()
 
         counter = counter + 1
