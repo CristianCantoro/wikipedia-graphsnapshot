@@ -1,6 +1,8 @@
+# ignore inpunt/output directory, logs directory and misc
 input/*
 output/*
 logs/*
+misc/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
