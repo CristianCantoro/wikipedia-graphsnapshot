@@ -148,8 +148,8 @@ def process_lines(
         revision = next(dump, None)
 
         if revision is None:
-                revision = old_revision
-                is_last_revision = True
+            revision = old_revision
+            is_last_revision = True
 
         # read the line in a StringIO object and parse it with the csv module
         try:
