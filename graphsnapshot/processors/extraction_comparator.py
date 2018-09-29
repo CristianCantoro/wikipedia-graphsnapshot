@@ -1,11 +1,13 @@
 """
-Resolve redirects in a snapshot.
+Compare extractions at two different dates.
 
 The output format is csv.
 """
 
 import os
+import sys
 import csv
+import json
 import glob
 import mwxml
 import arrow
@@ -13,9 +15,11 @@ import regex as re
 import pathlib
 import jsonable
 import datetime
+import itertools
 import functools
 import collections
-from typing import Iterable, Iterator, Mapping, NamedTuple
+from io import StringIO
+from typing import (Iterable, Iterator, Mapping, NamedTuple, Optional)
 
 import more_itertools
 
@@ -24,7 +28,7 @@ from .. import file_utils as fu
 from .. import dumper
 
 
-NLINES = 10000
+NPRINTREVISION = 10000
 
 DATE_START = arrow.get('2001-01-16', 'YYYY-MM')
 DATE_NOW = arrow.now()
@@ -48,6 +52,25 @@ new_chunk_pattern += '-p{pageid_first}p{pageid_last}.{dumpext}'
 new_chunk_pattern += '.features.xml.{ext}'
 
 
+# Page:
+#   - page_id
+#   - page_title
+#   - Revision:
+#     - revision_id
+#     - revision_parent_id
+#     - revision_timestamp
+#     - revision_minor
+#     - User:
+#       - user_type
+#       - user_username
+#       - user_id
+#     - Link:
+#       - wikilink.link
+#       - wikilink.tosection
+#       - wikilink.anchor
+#       - wikilink.section_name
+#       - wikilink.section_level
+#       - wikilink.section_number
 Revision = NamedTuple('Revision', [
     ('id', int),
     ('parent_id', int),
@@ -82,22 +105,6 @@ Chunkfile = NamedTuple('Chunkfile', [
 ])
 
 
-csv_header_input = ('page_id',
-                    'page_title',
-                    'revision_id',
-                    'revision_parent_id',
-                    'revision_timestamp'
-                    )
-
-
-csv_header_output = csv_header_input + ('redirect_id',
-                                        'redirect_title',
-                                        'redirect_revision_id',
-                                        'redirect_revision_parent_id',
-                                        'redirect_revision_timestamp'
-                                        )
-
-
 stats_template = '''
 <stats>
     <performance>
@@ -110,89 +117,90 @@ stats_template = '''
 '''
 
 
-# def process_lines(
-#         dump: Iterable[list],
-#         stats: Mapping,
-#         selected_chunks: Iterable[list],
-#         ignore_newer: bool) -> Iterator[list]:
-def process_lines(
-        dump: Iterable[list],
-        timestamps: Iterable[arrow.arrow.Arrow],
-        stats: Mapping,
-        only_last_revision: bool,
-        skip_header: bool) -> Iterator[list]:
-    """Assign each revision to the snapshot or snapshots to which they
-       belong.
-    """
+def progress(what: Optional[str]='.') -> None:
+    print(what, end='', file=sys.stderr, flush=True)
 
-    # skip header
-    if skip_header:
-        next(dump)
 
-    header = csv_header
+def sort_revisions(rev):
+    return (rev[1].revision.timestamp, rev[0])
 
-    old_page = None
-    old_prevpage = None
-    new_page = None
-    new_prevpage = None
 
-    old_rev_prev = None
-    old_rev = None
-    new_rev_prev = None
-    new_rev = None
+def process_pages(dump: Iterable[list],
+                  header: Iterable[list],
+                  stats: Mapping,
+                  only_last_revision: Optional[bool]=False,
+                  which: Optional[str]='old') -> Iterator[list]:
 
-    old_is_last_rev = None
-    new_is_last_rev = None
+    line = None
+    prevline = None
+    is_last_line = None
+
+    page = None
+    prevpage = None
+
+    revisions = []
+    sorted_revisions = None
+
+    counter = 0
+    lineno = 1
 
     break_flag = False
 
-    i = 0
-    page_revisions = []
-    counter = 0
-
-    # equivalent to
-    # for revision in dump:
     while True:
         if break_flag:
             break
 
-        old_rev_prev = revision
-        old_rev = next(dump, None)
+        prevline = line
+        prevpage = page
 
-        if old_rev is None:
-                old_rev = old_rev_prev
-                old_is_last_revision = True
+        is_last_line = False
+        line = next(dump, None)
+        lineno = lineno + 1
+
+        if line is None:
+            line = prevline
+            is_last_line = True
 
         # read the line in a StringIO object and parse it with the csv module
         try:
-            old_rev_parsed = [l for l in csv.reader(StringIO(old_rev))][0]
+            parsed = [l for l in csv.reader(StringIO(line))][0]
         except (csv.Error, TypeError) as err:
-            continue
+            return None
 
-        old_revdata = dict(zip(header, old_rev_parsed))
-        old_page = Page(
-            old_revdata['page_id'],
-            old_revdata['page_title'],
-            Revision(old_revdata['revision_id'],
-                     old_revdata['revision_parent_id'],
-                     arrow.get(old_revdata['revision_timestamp'])
-                     ))
+        data = dict(zip(header, parsed))
+        page = Page(data['page_id'],
+                    data['page_title'],
+                    Revision(data['revision_id'],
+                             data['revision_parent_id'],
+                             arrow.get(data['revision_timestamp']),
+                             data['revision_minor'],
+                             )
+                    )
 
-        if old_prevpage is None or \
-                old_prevpage.id != old_page.id:
+        import ipdb; ipdb.set_trace()
+
+        if prevpage is None:
+            if which == 'old':
+                utils.log("Processing < {title} {{id:{id}}} "
+                          .format(title=page.title, id=page.id))
+
+            else:
+                utils.log("Processing > {title} {{id:{id}}} "
+                          .format(title=page.title, id=page.id))
+
+        if prevpage is None or prevpage.id != page.id:
             # we are starting now or we have a new page
             counter = 0
-            utils.log("Processing", dump_page.title)
-            stats['performance']['pages_analyzed'] += 1
+            stats['pages_analyzed'] += 1
 
-        if old_prevpage is None or \
-                old_prevpage.revision.id != old_page.revision.id:
-            stats['performance']['revisions_analyzed'] += 1
+        if prevpage is None or \
+                prevpage.revision.id != page.revision.id:
+            stats['revisions_analyzed'] += 1
 
-        if not old_is_last_rev and \
-                (old_prevpage is None or old_prevpage.id == old_page.id):
+        if not is_last_line and \
+                (prevpage is None or prevpage.id == page.id):
             # it is not the last revision, futhermore two cases:
-            #   * dump_prevpage is None: we are reading the first line of the
+            #   * prevpage is None: we are reading the first line of the
             #     dump file
             #   * dump_prevpage.id == dump_page.id we are reading a page whose
             #     is is the same as the previous one we read
@@ -203,22 +211,24 @@ def process_lines(
             counter = counter + 1
 
             if counter % NPRINTREVISION == 1:
-                utils.dot()
+                if which == 'old':
+                    progress('.')
+                else:
+                    progress(':')
 
-            old_page_revisions.append(dump_page)
-            old_prevpage = old_page
+            revisions.append( (lineno, page) )
+            prevpage = page
 
         else:
             # cases:
             #   * this is the last revision of the dump
-            #     (is_last_revision is True)
+            #     (is_last_line is True)
             #   * we have changed to a new page (dump_prevpage is not None
             #     and dump_prevpage.id != dump_page.id)
 
             # sort all the revision by timestamp (they are not guaranted to be
             # ordered)
-            sorted_revisions = sorted(page_revisions,
-                                      key=lambda pg: pg.revision.timestamp)
+            sorted_revisions = sorted(revisions, key=sort_revisions)
 
             # if we only want the sorted_revisions list is limited to the
             # last element.
@@ -233,90 +243,198 @@ def process_lines(
             if only_last_revision:
                 sorted_revisions = [sorted_revisions[-1]]
 
+            yield sorted_revisions
+
+            if prevpage.id != page.id:
+                if which == 'old':
+                    utils.log("Processing < {title} {{id:{id}}} "
+                              .format(title=page.title, id=page.id))
+                else:
+                    utils.log("Processing > {title} {{id:{id}}} "
+                              .format(title=page.title, id=page.id))
+
             # we are not interested to the new page for the moment, put it in
             # the list
-            dump_prevpage = dump_page
-            page_revisions = [dump_page]
+            prevpage = page
+            revisions = [ (lineno, page) ]
 
-            i = 0
-            j = 0
-            prevpage = None
-            while j < len(sorted_revisions):
-                page = sorted_revisions[j]
 
-                ct = page.revision.timestamp
-                pt = prevpage.revision.timestamp if prevpage else EPOCH
+def get_header(dump: Iterable[list]) -> Iterable[list]:
+    hline = next(dump)
+    header = [l for l in csv.reader(StringIO(hline))][0]
 
-                while i < len(timestamps):
-                    ts = timestamps[i]
+    return header 
 
-                    if not prevpage:
-                        # page contains the first revision for this page
 
-                        if ct > ts:
-                            # the page did not exist at the time
-                            # check another timestamp
-                            # print("ct {} > ts {}".format(ct, ts))
+def compare_pages(old_hist: Iterable[list],
+                  new_hist: Iterable[list],
+                  header_old: Iterable[list],
+                  header_new: Iterable[list]) -> Iterable[list]:
 
-                            i = i + 1
-                            continue
+    utils.log('<{old} ({nrevold}), {new} ({nrevnew})> '
+              .format(old=old_hist[0][1].title,
+                      new=new_hist[0][1].title,
+                      nrevold=len(old_hist),
+                      nrevnew=len(new_hist)
+                      )
+              )
 
-                        else:
-                            # ct <= ts
-                            # check another revision
-                            # print("ct {} <= ts {}".format(ct, ts))
+    i = 0
+    j = 0
 
-                            # update step
-                            prevpage = page
-                            j = j + 1
+    equal_count = 0
+    mod_count = 0
+    add_count = 0
+    sub_count = 0
+    diff = []
+    while (i < len(old_hist) or j < len(new_hist)):
+        line, old = old_hist[i] if i < len(old_hist) else None
+        line, new = new_hist[j] if j < len(new_hist) else None
 
-                            if j < len(sorted_revisions):
-                                break
-                    else:
+        import ipdb; ipdb.set_trace()
 
-                        if pt > ts:
-                            # check the other timestamps
-                            # print("pt {} > ts {}" .format(pt, ts))
+        if old and i % NPRINTREVISION == 0:
+            print('.', end='', file=sys.stderr, flush=True)
+        if new and j % NPRINTREVISION == 0:
+            print(':', end='', file=sys.stderr, flush=True)
 
-                            i = i + 1
-                            continue
+        if old and new and old == new:
+            equal_count = equal_count + 1
 
-                        elif ct > ts:
-                            # the previous revision is in the snapshot
-                            # check another timestamp
-                            # print("ct {} > ts {}".format(ct, ts))
+        if old and new and old != new:
+            mod_count = mod_count + 1
 
-                            i = i + 1
+            sub_dict = dict(zip(header_old, old))
+            add_dict = dict(zip(header_new, new))
 
-                            # print("{} -> {}".format(prevpage, ts), end='')
-                            # print(" - j: {}".format(j))
-                            yield (prevpage, ts)
+            diff.append( ('-', sub_dict) )
+            diff.append( ('+', add_dict) )
+            # --- if old and new and old != new
 
-                            continue
+        if new and old is None:
+            add_count = add_count + 1
 
-                        else:
-                            # check another revision
-                            # print("ct {} <= ts {}, pt {} <= ts {}"
-                            #       .format(ct, ts, pt, ts))
+            add_dict = dict(zip(header_new, new))
 
-                            # update step
-                            prevpage = page
-                            j = j + 1
-                            if j < len(sorted_revisions):
-                                break
+            diff.append( ('+', add_dict) )
+            # --- if new and old is None
 
-                    if j >= len(sorted_revisions):
-                        i = i + 1
+        if old and new is None:
+            sub_count = sub_count + 1
 
-                        # print("--- {} -> {}".format(page, ts), end='')
-                        # print(" - j: {}".format(j))
-                        yield (page, ts)
+            sub_dict = dict(zip(header_old, old))
 
-            if is_last_revision:
-                break_flag = True
+            diff.append( ('-', sub_dict) )
+            # --- if old and new is None
 
-        if not is_last_revision:
-            stats['performance']['link_analyzed'] += 1
+        i = i + 1
+        j = j + 1
+
+    # print string
+    diff_string = ('={equal},~{mod},-{sub},+{add}'
+                   .format(equal=equal_count,
+                           mod=mod_count,
+                           add=add_count,
+                           sub=sub_count)
+                   )
+    print(' ({})'.format(diff_string), file=sys.stderr, flush=True)
+
+    return diff
+
+
+def process_dumps(
+        old_dump: Iterable[list],
+        stats: Mapping,
+        selected_chunks: Iterable[list],
+        ignore_newer_than: arrow.arrow.Arrow,
+        header_old: Iterable[list],
+        header_new: Iterable[list],
+        only_last_revision: bool=False) -> Iterator[list]:
+    """Compare revisions in `old_dump` with revisions from `selected_chunks`.
+    """
+
+    new_dump = itertools.chain.from_iterable([afile
+                for afile in map(fu.open_csv_file, selected_chunks)])
+
+    if header_old is None:
+        header_old = get_header(old_dump)
+
+    if header_new is None:
+        header_new = get_header(new_dump)
+
+    old_generator = process_pages(dump=old_dump,
+                                  header=header_old,
+                                  stats=stats['performance']['old'],
+                                  only_last_revision=only_last_revision,
+                                  which='old'
+                                  )
+
+    new_generator = process_pages(dump=new_dump,
+                                  header=header_new,
+                                  stats=stats['performance']['new'],
+                                  only_last_revision=only_last_revision,
+                                  which='new'
+                                  )
+
+    read_old = True
+    read_new = True
+    break_flag = False
+    while True:
+        if break_flag:
+            break
+
+        if read_old:
+            oldpagehist = [(line, page) for line, page in next(old_generator)
+                           if page.revision.timestamp <= ignore_newer_than]
+
+        if read_new:
+            newpagehist = [(line, page) for line, page in next(new_generator)
+                           if page.revision.timestamp <= ignore_newer_than]
+
+        old_pageid = oldpagehist[0][1].id
+        new_pageid = newpagehist[0][1].id
+        old_pagetitle = oldpagehist[0][1].title
+        new_pagetitle = newpagehist[0][1].title
+
+        if old_pageid < new_pageid:
+            symbol = '<'
+
+            read_new = False
+            read_old = True
+
+        elif old_pageid > new_pageid:
+            symbol = '>'
+
+            read_new = True
+            read_old = False
+
+        else:
+            symbol = '=='
+
+            read_new = True
+            read_old = True
+
+        if old_pageid != new_pageid:
+            utils.log(('Do not compare '
+                       '{old_title} ({old_id}) '
+                       '{symbol} '
+                       '{new_title} ({new_id})'
+                       ).format(old_title=old_pagetitle,
+                                old_id=old_pageid,
+                                symbol=symbol,
+                                new_title=new_pagetitle,
+                                new_id=new_pageid,
+                                )
+                      )
+        else:
+            # compare_pages(old_hist, new_hist, header_old, header_new)
+            difflist = compare_pages(old_hist=oldpagehist,
+                                     new_hist=newpagehist,
+                                     header_old=header_old,
+                                     header_new=header_new
+                                     )
+
+            yield difflist
 
 
 def configure_subparsers(subparsers):
@@ -338,6 +456,7 @@ def configure_subparsers(subparsers):
     parser.add_argument(
         '--new-extractions-dir',
         type=is_dir,
+        required=True,
         help='Directory with the new extractions.'
     )
 
@@ -359,6 +478,28 @@ def configure_subparsers(subparsers):
         action='store_true',
         help='Ignore additions in the new extractions that are newer '
              'than the last date in the old extraction.'
+    )
+
+    parser.add_argument(
+        '--header-old',
+        type=str,
+        help='List of comma-separated column names to compare from '
+             'the old extraction '
+             '[default: use all columns, reading from the first line of the'
+             ' file, and compare only the ones that appear in both files].'
+    )
+    parser.add_argument(
+        '--header-new',
+        type=str,
+        help='List of comma-separated column names to compare from '
+             'the new extractions '
+             '[default: use all columns, reading from the first line of the'
+             ' file, and compare only the ones that appear in both files].'
+    )
+    parser.add_argument(
+        '--only-last-revision',
+        action='store_true',
+        help='Consider only the last revision for each page'
     )
 
     parser.set_defaults(func=main)
@@ -422,8 +563,16 @@ def main(
         'performance': {
             'start_time': None,
             'end_time': None,
-            'revisions_analyzed': 0,
-            'pages_analyzed': 0,
+            'old': {
+                'pages_analyzed': 0,
+                'revisions_analyzed': 0,
+                'lines': 0
+                },
+            'new': {
+                'pages_analyzed': 0,
+                'revisions_analyzed': 0,
+                'lines': 0
+            }
         }
     }
     stats['performance']['start_time'] = datetime.datetime.utcnow()
@@ -450,7 +599,6 @@ def main(
                     (basename + '.compare_extractions.stats.xml')),
             compression=args.output_compression,
         )
-    writer = csv.writer(pages_output)
 
     base_match = re_chunk.match(basename)
     if base_match:
@@ -517,7 +665,7 @@ def main(
     assert (new_extraction_date > DATE_START and \
                 new_extraction_date < DATE_NOW)
 
-    assert ( new_extraction_date > old_extraction_date )
+    assert (new_extraction_date > old_extraction_date)
 
     selected_intervals = select_intervals(
         (base_chunk.pageid_first, base_chunk.pageid_last),
@@ -547,31 +695,30 @@ def main(
                 selected_chunks.add(cf)
 
     selected_chunks = sorted(selected_chunks, key=sort_chunks)
-    import ipdb; ipdb.set_trace()
 
-    dump = csv.reader(dump)
-    pages_generator = process_lines(
+    header_old = args.header_old.split(',') if args.header_old else None
+    header_new = args.header_new.split(',') if args.header_new else None
+
+    ignore_newer_than = DATE_NOW
+    if ignore_newer:
+        ignore_newer_than = old_extraction_date
+
+    difflist_generator = process_dumps(
         dump,
         stats,
         selected_chunks=selected_chunks,
-        ignore_newer=ignore_newer
+        ignore_newer_than=ignore_newer_than,
+        header_old=header_old,
+        header_new=header_new,
+        only_last_revision=args.only_last_revision,
         )
 
-    writer.writerow(csv_header_output)
-    for page in pages_generator:
-        # csv_header_output
-        #
-        # page_id
-        # page_title
-        # revision_id
-        # revision_parent_id
-        # revision_timestamp
-        # redirect_id
-        # redirect_title
-        # redirect_revision_id
-        # redirect_revision_parent_id
-        # redirect_revision_timestamp
-        writer.writerow(page)
+    writer = csv.writer(pages_output)
+    for difflist in difflist_generator:
+        for diff in difflist:
+            sign = diff[0]
+            line = json.dumps(diff[1])
+            writer.writerow([sign, line])
 
     stats['performance']['end_time'] = datetime.datetime.utcnow()
 
