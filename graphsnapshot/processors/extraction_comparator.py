@@ -79,10 +79,11 @@ Revision = NamedTuple('Revision', [
 ])
 
 
-Page = NamedTuple('Page', [
+PageData = NamedTuple('Page', [
     ('id', str),
     ('title', str),
     ('revision', Revision),
+    ('data', dict),
 ])
 
 
@@ -168,16 +169,15 @@ def process_pages(dump: Iterable[list],
             return None
 
         data = dict(zip(header, parsed))
-        page = Page(data['page_id'],
-                    data['page_title'],
-                    Revision(data['revision_id'],
-                             data['revision_parent_id'],
-                             arrow.get(data['revision_timestamp']),
-                             data['revision_minor'],
-                             )
-                    )
-
-        import ipdb; ipdb.set_trace()
+        page = PageData(data['page_id'],
+                        data['page_title'],
+                        Revision(data['revision_id'],
+                                 data['revision_parent_id'],
+                                 arrow.get(data['revision_timestamp']),
+                                 data['revision_minor'],
+                                 ),
+                        data
+                        )
 
         if prevpage is None:
             if which == 'old':
@@ -288,43 +288,38 @@ def compare_pages(old_hist: Iterable[list],
     sub_count = 0
     diff = []
     while (i < len(old_hist) or j < len(new_hist)):
-        line, old = old_hist[i] if i < len(old_hist) else None
-        line, new = new_hist[j] if j < len(new_hist) else None
-
-        import ipdb; ipdb.set_trace()
+        lineno, old = old_hist[i] if i < len(old_hist) else (None, None)
+        lineno, new = new_hist[j] if j < len(new_hist) else (None, None)
 
         if old and i % NPRINTREVISION == 0:
             print('.', end='', file=sys.stderr, flush=True)
         if new and j % NPRINTREVISION == 0:
             print(':', end='', file=sys.stderr, flush=True)
 
-        if old and new and old == new:
-            equal_count = equal_count + 1
+        if old and new:
+            if compare_data(old.data, new_data):
+                # old == new:
+                equal_count = equal_count + 1
+                # --- if old and new and old == new
 
-        if old and new and old != new:
-            mod_count = mod_count + 1
+            else:
+                # old != new:
+                mod_count = mod_count + 1
 
-            sub_dict = dict(zip(header_old, old))
-            add_dict = dict(zip(header_new, new))
-
-            diff.append( ('-', sub_dict) )
-            diff.append( ('+', add_dict) )
-            # --- if old and new and old != new
+                diff.append( ('-', lineno, old.data) )
+                diff.append( ('+', lineno, new.data) )
+                # --- if old and new and old != new
 
         if new and old is None:
             add_count = add_count + 1
 
-            add_dict = dict(zip(header_new, new))
-
-            diff.append( ('+', add_dict) )
+            diff.append( ('+', lineno, new.data) )
             # --- if new and old is None
 
         if old and new is None:
             sub_count = sub_count + 1
 
-            sub_dict = dict(zip(header_old, old))
-
-            diff.append( ('-', sub_dict) )
+            diff.append( ('-', lineno, old.data) )
             # --- if old and new is None
 
         i = i + 1
@@ -716,9 +711,10 @@ def main(
     writer = csv.writer(pages_output)
     for difflist in difflist_generator:
         for diff in difflist:
-            sign = diff[0]
-            line = json.dumps(diff[1])
-            writer.writerow([sign, line])
+            change = diff[0]
+            lineno = diff[1]
+            data = json.dumps(diff[2])
+            writer.writerow([change, lineno, data])
 
     stats['performance']['end_time'] = datetime.datetime.utcnow()
 
