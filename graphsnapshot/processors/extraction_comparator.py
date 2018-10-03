@@ -129,6 +129,7 @@ def sort_revisions(rev):
 def process_pages(dump: Iterable[list],
                   header: Iterable[list],
                   stats: Mapping,
+                  max_timestamp: arrow.arrow.Arrow,
                   only_last_revision: Optional[bool]=False,
                   which: Optional[str]='old') -> Iterator[list]:
 
@@ -216,7 +217,9 @@ def process_pages(dump: Iterable[list],
                 else:
                     progress(':')
 
-            revisions.append( (lineno, page) )
+            if page.revision.timestamp <= max_timestamp:
+                revisions.append( (lineno, page) )
+
             prevpage = page
 
         else:
@@ -244,6 +247,7 @@ def process_pages(dump: Iterable[list],
                 sorted_revisions = [sorted_revisions[-1]]
 
             yield sorted_revisions
+            del sorted_revisions
 
             if prevpage.id != page.id:
                 if which == 'old':
@@ -265,11 +269,44 @@ def get_header(dump: Iterable[list]) -> Iterable[list]:
 
     return header 
 
+def equal_dicts(d1, d2, keys_to_compare):
+    keys = set(keys_to_compare)
+    for k1, v1 in d1.items():
+        if k1 in keys and (k1 not in d2 or d2[k1] != v1):
+            return False
+    for k2, v2 in d2.items():
+        if k2 in keys and k2 not in d1:
+            return False
+    return True
+
+
+def compare_data(old_data: Mapping,
+                 new_data: Mapping,
+                 exclude_columns: Iterable[list],
+                 all_columns: bool) -> bool:
+
+    old_keys = set(old_data.keys())
+    new_keys = set(new_data.keys())
+
+    columns_to_compare = set()
+    if all_columns:
+        # take all the columns
+        columns_to_compare = old_keys.union(new_keys)
+    else:
+        # take only the common columns
+        columns_to_compare = old_keys.intersection(new_keys)
+
+    columns_to_compare = columns_to_compare.difference(exclude_columns)
+
+    return equal_dicts(old_data, new_data, columns_to_compare)
+
 
 def compare_pages(old_hist: Iterable[list],
                   new_hist: Iterable[list],
                   header_old: Iterable[list],
-                  header_new: Iterable[list]) -> Iterable[list]:
+                  header_new: Iterable[list],
+                  all_columns: bool,
+                  exclude_columns: Iterable[list]) -> Iterable[list]:
 
     utils.log('<{old} ({nrevold}), {new} ({nrevnew})> '
               .format(old=old_hist[0][1].title,
@@ -297,7 +334,10 @@ def compare_pages(old_hist: Iterable[list],
             print(':', end='', file=sys.stderr, flush=True)
 
         if old and new:
-            if compare_data(old.data, new_data):
+            if compare_data(old_data=old.data,
+                            new_data=new.data,
+                            all_columns=all_columns,
+                            exclude_columns=exclude_columns):
                 # old == new:
                 equal_count = equal_count + 1
                 # --- if old and new and old == new
@@ -341,9 +381,11 @@ def process_dumps(
         old_dump: Iterable[list],
         stats: Mapping,
         selected_chunks: Iterable[list],
-        ignore_newer_than: arrow.arrow.Arrow,
+        max_timestamp: arrow.arrow.Arrow,
         header_old: Iterable[list],
         header_new: Iterable[list],
+        all_columns: bool,
+        exclude_columns: Iterable[list],
         only_last_revision: bool=False) -> Iterator[list]:
     """Compare revisions in `old_dump` with revisions from `selected_chunks`.
     """
@@ -360,6 +402,7 @@ def process_dumps(
     old_generator = process_pages(dump=old_dump,
                                   header=header_old,
                                   stats=stats['performance']['old'],
+                                  max_timestamp=max_timestamp,
                                   only_last_revision=only_last_revision,
                                   which='old'
                                   )
@@ -367,6 +410,7 @@ def process_dumps(
     new_generator = process_pages(dump=new_dump,
                                   header=header_new,
                                   stats=stats['performance']['new'],
+                                  max_timestamp=max_timestamp,
                                   only_last_revision=only_last_revision,
                                   which='new'
                                   )
@@ -379,17 +423,24 @@ def process_dumps(
             break
 
         if read_old:
-            oldpagehist = [(line, page) for line, page in next(old_generator)
-                           if page.revision.timestamp <= ignore_newer_than]
+            # oldpagehist = [(line, page) for line, page in next(old_generator)
+            #                if page.revision.timestamp <= max_timestamp]
+            oldpagehist = next(old_generator)
+            old_head = oldpagehist[0]
+
 
         if read_new:
-            newpagehist = [(line, page) for line, page in next(new_generator)
-                           if page.revision.timestamp <= ignore_newer_than]
+            # newpagehist = [(line, page) for line, page in next(new_generator)
+            #                if page.revision.timestamp <= max_timestamp]
+            newpagehist = next(new_generator)
+            new_head = newpagehist[0]
 
-        old_pageid = oldpagehist[0][1].id
-        new_pageid = newpagehist[0][1].id
-        old_pagetitle = oldpagehist[0][1].title
-        new_pagetitle = newpagehist[0][1].title
+        import ipdb; ipdb.set_trace()
+
+        old_pageid = old_head[1].id
+        new_pageid = new_head[1].id
+        old_pagetitle = old_head[1].title
+        new_pagetitle = new_head[1].title
 
         if old_pageid < new_pageid:
             symbol = '<'
@@ -413,7 +464,7 @@ def process_dumps(
             utils.log(('Do not compare '
                        '{old_title} ({old_id}) '
                        '{symbol} '
-                       '{new_title} ({new_id})'
+                       '{new_title} ({new_id})\n'
                        ).format(old_title=old_pagetitle,
                                 old_id=old_pageid,
                                 symbol=symbol,
@@ -426,7 +477,9 @@ def process_dumps(
             difflist = compare_pages(old_hist=oldpagehist,
                                      new_hist=newpagehist,
                                      header_old=header_old,
-                                     header_new=header_new
+                                     header_new=header_new,
+                                     all_columns=all_columns,
+                                     exclude_columns=exclude_columns,
                                      )
 
             yield difflist
@@ -492,9 +545,23 @@ def configure_subparsers(subparsers):
              ' file, and compare only the ones that appear in both files].'
     )
     parser.add_argument(
+        '--all-columns',
+        action='store_true',
+        help='Consider all the columns of the files, except the ones listed '
+             'in --exclude-columns. The default behaviour is to compare only '
+             'the common column.'
+    )
+    parser.add_argument(
+        '-x',
+        '--exclude-columns',
+        type=str,
+        help='List of comma-separated column names to exclude from the '
+             'comparison.'
+    )
+    parser.add_argument(
         '--only-last-revision',
         action='store_true',
-        help='Consider only the last revision for each page'
+        help='Consider only the last revision for each page.'
     )
 
     parser.set_defaults(func=main)
@@ -698,13 +765,18 @@ def main(
     if ignore_newer:
         ignore_newer_than = old_extraction_date
 
+    exclude_columns = (args.exclude_columns.split(',')
+                       if args.exclude_columns else None)
+
     difflist_generator = process_dumps(
         dump,
         stats,
         selected_chunks=selected_chunks,
-        ignore_newer_than=ignore_newer_than,
+        max_timestamp=ignore_newer_than,
         header_old=header_old,
         header_new=header_new,
+        all_columns=args.all_columns,
+        exclude_columns=exclude_columns,
         only_last_revision=args.only_last_revision,
         )
 
