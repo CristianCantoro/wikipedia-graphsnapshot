@@ -52,37 +52,9 @@ new_chunk_pattern += '-p{pageid_first}p{pageid_last}.{dumpext}'
 new_chunk_pattern += '.features.xml.{ext}'
 
 
-# Page:
-#   - page_id
-#   - page_title
-#   - Revision:
-#     - revision_id
-#     - revision_parent_id
-#     - revision_timestamp
-#     - revision_minor
-#     - User:
-#       - user_type
-#       - user_username
-#       - user_id
-#     - Link:
-#       - wikilink.link
-#       - wikilink.tosection
-#       - wikilink.anchor
-#       - wikilink.section_name
-#       - wikilink.section_level
-#       - wikilink.section_number
-Revision = NamedTuple('Revision', [
+PageData = NamedTuple('PageData', [
     ('id', int),
-    ('parent_id', int),
     ('timestamp', jsonable.Type),
-    ('minor', bool),
-])
-
-
-PageData = NamedTuple('Page', [
-    ('id', str),
-    ('title', str),
-    ('revision', Revision),
     ('data', dict),
 ])
 
@@ -123,7 +95,7 @@ def progress(what: Optional[str]='.') -> None:
 
 
 def sort_revisions(rev):
-    return (rev[1].revision.timestamp, rev[0])
+    return (rev[1].timestamp, rev[0])
 
 
 def process_pages(dump: Iterable[list],
@@ -170,32 +142,44 @@ def process_pages(dump: Iterable[list],
             return None
 
         data = dict(zip(header, parsed))
-        page = PageData(data['page_id'],
-                        data['page_title'],
-                        Revision(data['revision_id'],
-                                 data['revision_parent_id'],
-                                 arrow.get(data['revision_timestamp']),
-                                 data['revision_minor'],
-                                 ),
+        # PageData = NamedTuple('PageData', [
+        #     ('id', int),
+        #     ('timestamp', jsonable.Type),
+        #     ('data', dict),
+        # ])
+        page = PageData(int(data['page_id']),
+                        arrow.get(data['revision_timestamp']),
                         data
                         )
 
         if prevpage is None:
             if which == 'old':
+                # utils.log("Processing < {title} {{id:{id}}} "
+                #           .format(title=page.title, id=page.id))
                 utils.log("Processing < {title} {{id:{id}}} "
-                          .format(title=page.title, id=page.id))
+                          .format(title=page.data['page_title'],
+                                  id=page.id
+                                  )
+                          )
 
             else:
+                # utils.log("Processing > {title} {{id:{id}}} "
+                #           .format(title=page.title, id=page.id))
                 utils.log("Processing > {title} {{id:{id}}} "
-                          .format(title=page.title, id=page.id))
+                          .format(title=page.data['page_title'],
+                                  id=page.id
+                                  )
+                          )
 
         if prevpage is None or prevpage.id != page.id:
             # we are starting now or we have a new page
             counter = 0
             stats['pages_analyzed'] += 1
 
+        # if prevpage is None or \
+        #         prevpage.revision.id != page.revision.id
         if prevpage is None or \
-                prevpage.revision.id != page.revision.id:
+                int(prevpage.data['revision_id']) != int(page.data['revision_id']):
             stats['revisions_analyzed'] += 1
 
         if not is_last_line and \
@@ -217,7 +201,7 @@ def process_pages(dump: Iterable[list],
                 else:
                     progress(':')
 
-            if page.revision.timestamp <= max_timestamp:
+            if page.timestamp <= max_timestamp:
                 revisions.append( (lineno, page) )
 
             prevpage = page
@@ -251,11 +235,22 @@ def process_pages(dump: Iterable[list],
 
             if prevpage.id != page.id:
                 if which == 'old':
+                    # utils.log("Processing < {title} {{id:{id}}} "
+                    #           .format(title=page.title, id=page.id))
                     utils.log("Processing < {title} {{id:{id}}} "
-                              .format(title=page.title, id=page.id))
+                              .format(title=page.data['page_title'],
+                                      id=page.id
+                                      )
+                              )
+
                 else:
+                    # utils.log("Processing > {title} {{id:{id}}} "
+                    #           .format(title=page.title, id=page.id))
                     utils.log("Processing > {title} {{id:{id}}} "
-                              .format(title=page.title, id=page.id))
+                              .format(title=page.data['page_title'],
+                                      id=page.id
+                                      )
+                              )
 
             # we are not interested to the new page for the moment, put it in
             # the list
@@ -309,8 +304,8 @@ def compare_pages(old_hist: Iterable[list],
                   exclude_columns: Iterable[list]) -> Iterable[list]:
 
     utils.log('<{old} ({nrevold}), {new} ({nrevnew})> '
-              .format(old=old_hist[0][1].title,
-                      new=new_hist[0][1].title,
+              .format(old=old_hist[0][1].data['page_title'],
+                      new=new_hist[0][1].data['page_title'],
                       nrevold=len(old_hist),
                       nrevnew=len(new_hist)
                       )
@@ -435,12 +430,11 @@ def process_dumps(
             newpagehist = next(new_generator)
             new_head = newpagehist[0]
 
-        import ipdb; ipdb.set_trace()
-
         old_pageid = old_head[1].id
         new_pageid = new_head[1].id
-        old_pagetitle = old_head[1].title
-        new_pagetitle = new_head[1].title
+
+        old_pagetitle = old_head[1].data['page_title']
+        new_pagetitle = new_head[1].data['page_title']
 
         if old_pageid < new_pageid:
             symbol = '<'
