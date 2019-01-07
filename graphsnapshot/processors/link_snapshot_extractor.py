@@ -271,6 +271,11 @@ def configure_subparsers(subparsers):
         type=str,
         help='Snapshot file.'
     )
+    parser.add_argument(
+        '--skip-snapshot-header',
+        action='store_true',
+        help='Skip the snapshot file header line.'
+    )
     parser.set_defaults(func=main)
 
 
@@ -301,6 +306,9 @@ def main(
     pages_in_snapshot = set()
     revisions_in_snapshot = set()
     pagetitles_in_snapshot = set()
+
+    if args.skip_snapshot_header:
+        next(snapshot_reader)
     for row_data in snapshot_reader:
         pages_in_snapshot.add(int(row_data[0]))
         pagetitles_in_snapshot.add(fu.normalize_wikititle(row_data[1]))
