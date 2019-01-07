@@ -258,7 +258,7 @@ def process_lines(
 def configure_subparsers(subparsers):
     """Configure a new subparser ."""
     parser = subparsers.add_parser(
-        'link-snapshot-extractor',
+        'extract-link-snapshot',
         help='Extract link snapshots from page list',
     )
     parser.add_argument(
