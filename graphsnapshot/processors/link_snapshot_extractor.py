@@ -237,7 +237,7 @@ def process_lines(
                 # print a dot for each link analyzed
                 utils.dot()
 
-                wikilink = (fu.normalize_wikititle(dump_page.revision.wikilink.link)
+                wikilink = (utils.normalize_wikititle(dump_page.revision.wikilink.link)
                             .strip()
                             )
                 wikilink = ' '.join(wikilink.split())
@@ -311,7 +311,7 @@ def main(
         next(snapshot_reader)
     for row_data in snapshot_reader:
         pages_in_snapshot.add(int(row_data[0]))
-        pagetitles_in_snapshot.add(fu.normalize_wikititle(row_data[1]))
+        pagetitles_in_snapshot.add(utils.normalize_wikititle(row_data[1]))
         revisions_in_snapshot.add(int(row_data[2]))
 
     if args.dry_run:
