@@ -25,7 +25,8 @@ from .. import dumper
 
 Wikilink = NamedTuple('Wikilink', [
     ('link', str),
-    ('anchor', int),
+    ('tosection', str),
+    ('anchor', str),
     ('section_name', str),
     ('section_level', int),
     ('section_number', int),
@@ -65,6 +66,7 @@ output_csv_header = ('page_id',
                      'user_id',
                      'revision_minor',
                      'wikilink.link',
+                     'wikilink.tosection',
                      'wikilink.anchor',
                      'wikilink.section_name',
                      'wikilink.section_level',
@@ -195,20 +197,21 @@ def process_lines(
                     continue
 
                 # Mapping from the input csv
-                # 'page_id', 0
-                # 'page_title', 1
-                # 'revision_id', 2
-                # 'revision_parent_id', 3
-                # 'revision_timestamp', 4
-                # 'user_type', 5
-                # 'user_username', 6
-                # 'user_id', 7
-                # 'revision_minor', 8
-                # 'wikilink.link', 9
-                # 'wikilink.anchor', 10
-                # 'wikilink.section_name', 11
-                # 'wikilink.section_level', 12
-                # 'wikilink.section_number' 13
+                # 0: page_id
+                # 1: page_title
+                # 2: revision_id
+                # 3: revision_parent_id
+                # 4: revision_timestamp
+                # 5: user_type
+                # 6: user_username
+                # 7: user_id
+                # 8: revision_minor
+                # 9: wikilink.link
+                # 10: wikilink.tosection
+                # 11: wikilink.anchor
+                # 12: wikilink.section_name
+                # 13: wikilink.section_level
+                # 14: wikilink.section_number
                 dump_page = Page(int(revcsv[0]),
                                  revcsv[1],
                                  Revision(int(revcsv[2]),
@@ -222,8 +225,9 @@ def process_lines(
                                           Wikilink(revcsv[9],
                                                    revcsv[10],
                                                    revcsv[11],
-                                                   int(revcsv[12]),
+                                                   revcsv[12],
                                                    int(revcsv[13]),
+                                                   int(revcsv[14]),
                                                    )))
 
                 # Print pagetitle for each diferent revision analyzed, that is
