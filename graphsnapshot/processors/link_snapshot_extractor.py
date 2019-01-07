@@ -20,6 +20,7 @@ from typing import Iterable, Iterator, Mapping, NamedTuple, Optional
 
 from .. import utils
 from .. import file_utils as fu
+from .. import dumper
 
 
 Wikilink = NamedTuple('Wikilink', [
@@ -72,6 +73,22 @@ output_csv_header = ('page_id',
                      )
 
 
+stats_template = '''
+<stats>
+    <performance>
+        <start_time>${stats['performance']['start_time'] | x}</start_time>
+        <end_time>${stats['performance']['end_time'] | x}</end_time>
+        <pages_analyzed>${stats['performance']['pages_analyzed'] | x}</pages_analyzed>
+        <revisions_analyzed>${stats['performance']['revisions_analyzed'] | x}</revisions_analyzed>
+    </performance>
+    <snapshot>
+        <links>${stats['snapshot']['links'] | x}</links>
+        <revisions>${stats['snapshot']['revisions'] | x}</revisions>
+    </snapshot>
+</stats>
+'''
+
+
 def first_uppercase(string: str) -> str:
     """
     Make the first charachter of a str "string" uppercase and leave the rest
@@ -85,6 +102,7 @@ def first_uppercase(string: str) -> str:
 
 def process_lines(
         dump: Iterable[list],
+        stats: Mapping,
         pages_in_snapshot: set,
         pagetitles_in_snapshot: set,
         revisions_in_snapshot: set) -> Iterator[list]:
@@ -127,6 +145,8 @@ def process_lines(
             # this is the last line, end loop.
             break
 
+        stats['performance']['revisions_analyzed'] += 1
+
         # Split the line to get page id and revision id, if something goes
         # wrong we ignore that line.
         revmatch = splitline_re.match(linkline)
@@ -147,6 +167,7 @@ def process_lines(
         # Print page id
         if dump_prevpage == 0 or dump_prevpage_id != dump_page_id:
             utils.log("Processing page id {}".format(dump_page_id))
+            stats['performance']['pages_analyzed'] += 1
 
         # If the page id is not in the set of the page ids contained in this
         # snapshot we set skip_page to true so that we skip it.
@@ -222,6 +243,7 @@ def process_lines(
                     # we print the page title in parenthesys
                     page_title = " ({})".format(dump_page.title)
                     print(page_title, end='', file=sys.stderr)
+                    stats['snapshot']['revisions'] += 1
 
                 # print a dot for each link analyzed
                 utils.dot()
@@ -236,10 +258,12 @@ def process_lines(
                     active_link = 1
 
                 yield (dump_page, active_link)
+                stats['snapshot']['links'] += 1
 
                 dump_prevpage_id = dump_page_id
                 dump_prevpage_revision_id = dump_page_revision_id
                 dump_prevpage = dump_page
+
 
 
 def configure_subparsers(subparsers):
@@ -273,11 +297,12 @@ def main(
             'revisions_analyzed': 0,
             'pages_analyzed': 0,
         },
-        'section_names': {
-            'global': collections.Counter(),
-            'last_revision': collections.Counter(),
+        'snapshot': {
+            'links': 0,
+            'revisions': 0,
         },
     }
+    stats['performance']['start_time'] = datetime.datetime.utcnow()
 
     date = arrow.get(args.date)
 
@@ -313,6 +338,7 @@ def main(
 
     pages_generator = process_lines(
         dump,
+        stats,
         pages_in_snapshot=pages_in_snapshot,
         pagetitles_in_snapshot=pagetitles_in_snapshot,
         revisions_in_snapshot=revisions_in_snapshot,
@@ -338,3 +364,12 @@ def main(
             page.revision.wikilink.section_number,
             active_link
         ))
+
+    stats['performance']['end_time'] = datetime.datetime.utcnow()
+
+    with stats_output:
+        dumper.render_template(
+            stats_template,
+            stats_output,
+            stats=stats,
+        )
