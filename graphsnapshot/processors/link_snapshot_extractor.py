@@ -89,17 +89,6 @@ stats_template = '''
 '''
 
 
-def first_uppercase(string: str) -> str:
-    """
-    Make the first charachter of a str "string" uppercase and leave the rest
-    unchanged.
-    """
-    if len(string) > 0:
-        return string[0].upper() + string[1:]
-    else:
-        return ''
-
-
 def process_lines(
         dump: Iterable[list],
         stats: Mapping,
@@ -248,7 +237,7 @@ def process_lines(
                 # print a dot for each link analyzed
                 utils.dot()
 
-                wikilink = (first_uppercase(dump_page.revision.wikilink.link)
+                wikilink = (fu.normalize_wikititle(dump_page.revision.wikilink.link)
                             .strip()
                             )
                 wikilink = ' '.join(wikilink.split())
@@ -314,7 +303,7 @@ def main(
     pagetitles_in_snapshot = set()
     for row_data in snapshot_reader:
         pages_in_snapshot.add(int(row_data[0]))
-        pagetitles_in_snapshot.add(first_uppercase(row_data[1]))
+        pagetitles_in_snapshot.add(fu.normalize_wikititle(row_data[1]))
         revisions_in_snapshot.add(int(row_data[2]))
 
     if args.dry_run:

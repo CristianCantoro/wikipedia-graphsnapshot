@@ -122,10 +122,14 @@ def pairwise(iterable):
     return zip(a, b)
 
 
+# See also:
+# https://en.wikipedia.org/wiki/Help:Link#Conversion_to_canonical_form
 def normalize_wikititle(title: str) -> str:
     if len(title) > 1:
         title = title[0].upper() + title[1:]
     elif len(title) == 1:
         title = title[0].upper()
 
-    return title.replace('_', ' ')
+    title = title.replace('_', ' ')
+    normalized = ' '.join(title.split())
+    return normalized.strip()
