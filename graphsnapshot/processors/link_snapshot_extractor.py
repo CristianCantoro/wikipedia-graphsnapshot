@@ -80,6 +80,7 @@ stats_template = '''
     <performance>
         <start_time>${stats['performance']['start_time'] | x}</start_time>
         <end_time>${stats['performance']['end_time'] | x}</end_time>
+        <elapsed_time>${stats['performance']['elapsed_time'] | x}</elapsed_time>
         <pages_analyzed>${stats['performance']['pages_analyzed'] | x}</pages_analyzed>
         <revisions_analyzed>${stats['performance']['revisions_analyzed'] | x}</revisions_analyzed>
     </performance>
@@ -230,8 +231,8 @@ def process_lines(
                                                    int(revcsv[14]),
                                                    )))
 
-                # Print pagetitle for each diferent revision analyzed, that is
-                # at most once.
+                # Print pagetitle for each different revision analyzed,
+                # that is at most once.
                 if dump_prevpage_revision_id != dump_page_revision_id:
                     # we print the page title in parenthesys
                     page_title = " ({})".format(dump_page.title)
@@ -292,6 +293,7 @@ def main(
         'performance': {
             'start_time': None,
             'end_time': None,
+            'elapsed_time': None,
             'revisions_analyzed': 0,
             'pages_analyzed': 0,
         },
@@ -301,6 +303,7 @@ def main(
         },
     }
     stats['performance']['start_time'] = datetime.datetime.utcnow()
+    start_time = stats['performance']['start_time']
 
     date = arrow.get(args.date)
 
@@ -331,7 +334,7 @@ def main(
             compression=args.output_compression,
         )
         stats_output = fu.output_writer(
-            path=str(args.output_dir_path/(basename + '.stats.xml')),
+            path=str(args.output_dir_path/(basename + '.stats.{date}.xml')),
             compression=args.output_compression,
         )
 
@@ -367,6 +370,8 @@ def main(
         ))
 
     stats['performance']['end_time'] = datetime.datetime.utcnow()
+    end_time = stats['performance']['end_time']
+    stats['performance']['elapsed_time'] = (end_time-start_time).seconds
 
     with stats_output:
         dumper.render_template(
