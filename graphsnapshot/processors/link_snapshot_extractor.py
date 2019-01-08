@@ -328,13 +328,15 @@ def main(
         filename = str(args.output_dir_path /
                        (basename + '.features.{date}.csv'))
         filename = filename.format(date=date.format('YYYY-MM-DD'))
+        stats_filename = str(args.output_dir_path/(basename + '.stats.{date}.xml'))
+        stats_filename = stats_filename.format(date=date.format('YYYY-MM-DD'))
 
         pages_output = fu.output_writer(
             path=filename,
             compression=args.output_compression,
         )
         stats_output = fu.output_writer(
-            path=str(args.output_dir_path/(basename + '.stats.{date}.xml')),
+            path=stats_filename,
             compression=args.output_compression,
         )
 
