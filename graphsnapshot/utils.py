@@ -131,5 +131,4 @@ def normalize_wikititle(title: str) -> str:
         title = title[0].upper()
 
     title = title.replace('_', ' ')
-    normalized = ' '.join(title.split())
-    return normalized.strip()
+    return ' '.join(title.split())

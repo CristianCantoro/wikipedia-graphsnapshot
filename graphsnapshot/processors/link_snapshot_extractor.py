@@ -242,10 +242,7 @@ def process_lines(
                 # print a dot for each link analyzed
                 utils.dot()
 
-                wikilink = (utils.normalize_wikititle(dump_page.revision.wikilink.link)
-                            .strip()
-                            )
-                wikilink = ' '.join(wikilink.split())
+                wikilink = utils.normalize_wikititle(dump_page.revision.wikilink.link)
 
                 active_link = 0
                 if wikilink in pagetitles_in_snapshot:
