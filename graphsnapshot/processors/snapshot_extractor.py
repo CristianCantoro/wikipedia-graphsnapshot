@@ -376,6 +376,11 @@ def configure_subparsers(subparsers):
         help='Skip the first line of the input.'
     )
     parser.add_argument(
+        '--first-date',
+        type=str,
+        help='First timestamp to take [default: WIKIEPOCH (2001-01-15)].'
+    )
+    parser.add_argument(
         '--last-date',
         type=str,
         help='Greatest timestamp in the dump [default: infer from input name].'
@@ -421,15 +426,21 @@ def main(
             raise ValueError("Could not infer date from snapshot name and "
                              "no --last-date passed")
 
+    if args.first_date is not None:
+        first_date = arrow.get(args.first_date)
+    else:
+        first_date = WIKIEPOCH
+
     # we add some margin to be safe
     last_date = last_date.replace(days=2).replace(seconds=-1)
     endtime = last_date.replace(**PERIODICITY[args.periodicity](1))
 
     period = PERIODICITY[args.periodicity]
     nperiods = NPERIODS[args.periodicity](DELTA.days)
-    timestamps = [WIKIEPOCH.replace(**period(i))
+    timestamps = [first_date.replace(**period(i))
                   for i in range(nperiods)
-                  if WIKIEPOCH.replace(**period(i)) <= endtime
+                  if first_date.replace(**period(i)) <= endtime and \
+                     first_date.replace(**period(i)) >= WIKIEPOCH
                   ]
 
     writers = {}
@@ -437,6 +448,15 @@ def main(
         pages_output = open(os.devnull, 'wt')
         stats_output = open(os.devnull, 'wt')
     else:
+        stats_filename = str(args.output_dir_path/
+                             (basename + '.stats.{first}-{last}.xml'))
+        stats_filename = stats_filename.format(first=first_date.format('YYYY-MM-DD'),
+                                               last=last_date.format('YYYY-MM-DD'))
+
+        stats_output = fu.output_writer(
+            path=stats_filename,
+            compression=args.output_compression,
+        )
         for ts in timestamps:
             filename = str(args.output_dir_path /
                            (basename + '.features.{date}.csv'))
@@ -444,10 +464,6 @@ def main(
 
             pages_output = fu.output_writer(
                 path=filename,
-                compression=args.output_compression,
-            )
-            stats_output = fu.output_writer(
-                path=str(args.output_dir_path/(basename + '.stats.xml')),
                 compression=args.output_compression,
             )
 
