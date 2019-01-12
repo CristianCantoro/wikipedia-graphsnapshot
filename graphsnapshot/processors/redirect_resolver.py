@@ -36,7 +36,7 @@ DATE_NOW = arrow.now()
 
 
 # snapshot name regex
-re_snapshotname = re.compile(r'snapshot\.(\d{4}-\d{2}-\d{2})\.csv\.(.+)',
+re_snapshotname = re.compile(r'.*snapshot\.(\d{4}-\d{2}-\d{2})\.csv\.(.+)',
                              re.IGNORECASE | re.DOTALL)
 
 
@@ -178,10 +178,15 @@ def read_redirects(
 
 
 def read_snapshot_pages(
-    input_file_path: Iterable[list]) -> Mapping:
+    input_file_path: Iterable[list],
+    skip_header: bool
+    ) -> Mapping:
 
     snapshot = fu.open_csv_file(str(input_file_path))
     snapshot_reader = csv.reader(snapshot)
+
+    if skip_header:
+        next(snapshot_reader)
 
     title2id = dict()
 
@@ -284,9 +289,6 @@ def process_lines(
        belong.
     """
 
-    # skip header
-    # header = next(dump)
-    next(dump)
     header = csv_header_input
 
     counter = 0
@@ -322,7 +324,11 @@ def configure_subparsers(subparsers):
         required=True,
         help='File with redirects over the snapshot history.'
     )
-
+    parser.add_argument(
+        '--skip-header',
+        action='store_true',
+        help='Skip the first line of the input.'
+    )
     parser.set_defaults(func=main)
 
 
@@ -370,9 +376,14 @@ def main(
 
     redirects_history = read_redirects(redirects, snapshot_date)
 
-    snapshot_title2id = read_snapshot_pages(inputfile_full_path)
+    snapshot_title2id = read_snapshot_pages(inputfile_full_path,
+                                            skip_header=args.skip_header)
     
     dump = csv.reader(dump)
+
+    if args.skip_header:
+        next(dump)
+
     pages_generator = process_lines(
         dump,
         stats,
