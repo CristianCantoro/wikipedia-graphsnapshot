@@ -69,6 +69,11 @@ Page = NamedTuple('Page', [
     ('revision', Revision),
 ])
 
+PageNode = NamedTuple('PageNode', [
+    ('id', int),
+    ('title', str),
+])
+
 
 # page.from.id
 # page.from.title
@@ -200,12 +205,12 @@ def process_lines(
 
             # yield (page_from, page_to)
             if add_titles:
-                yield (Page(dump_page.id, dump_page.title, None),
-                       Page(wikilink_id, wikilink, None)
+                yield (PageNode(dump_page.id, dump_page.title),
+                       PageNode(wikilink_id, wikilink)
                        )
             else:
-                yield (Page(dump_page.id, None, None),
-                       Page(wikilink_id, None, None)
+                yield (PageNode(dump_page.id, None),
+                       PageNode(wikilink_id, None)
                        )
 
         dump_prevpage = dump_page
