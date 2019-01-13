@@ -356,8 +356,11 @@ def main(
                    )
         filename = str(args.output_dir_path/(outname))
         filename = filename.format(date=date.format('YYYY-MM-DD'))
-        stats_filename = str(args.output_dir_path /
-                       ('wikilink_graph.{date}.stats.xml'))
+
+        stats_outname = ('wikilink_graph{suffix}.{{date}}.stats.xml'
+                         .format(suffix=args.output_suffix)
+                         )
+        stats_filename = str(args.output_dir_path/stats_outname)
         stats_filename = stats_filename.format(date=date.format('YYYY-MM-DD'))
 
         pages_output = fu.output_writer(
