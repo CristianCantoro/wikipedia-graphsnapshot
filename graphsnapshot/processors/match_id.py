@@ -98,6 +98,7 @@ def process_lines(
         pages_in_snapshot: Mapping,
         pages_redirected: Mapping,
         ids_redirected: Mapping,
+        keep_duplicate_links: bool,
         add_titles: bool,
         trim_redirects: bool
         ) -> Iterator[list]:
@@ -106,8 +107,8 @@ def process_lines(
     """
     dump_page = None
     dump_prevpage = None
-
     linkline = None
+    duplicates = set()
 
     # -------------------------------------------------------------------------
     # OUTLINE OF THE ALGORITHM
@@ -189,6 +190,13 @@ def process_lines(
                         ids_redirected[dump_page.id] == wikilink_id:
                     # it's a redirect page, we skip it
                     continue
+
+            if not keep_duplicate_links:
+                item = (dump_page.id, wikilink_id)
+                if item in duplicates:
+                    continue
+                else:
+                    duplicates.add(item)
 
             # yield (page_from, page_to)
             if add_titles:
@@ -385,6 +393,7 @@ def main(
         pages_in_snapshot=pages_in_snapshot,
         pages_redirected=pages_redirected,
         ids_redirected=ids_redirected,
+        keep_duplicate_links=args.keep_duplicate_links,
         add_titles=args.titles,
         trim_redirects=args.trim_redirects
         )
@@ -394,13 +403,7 @@ def main(
     else:
         writer.writerow(csv_header_output_notitles)
 
-    pages = pages_generator
-    if not args.keep_duplicate_links:
-        utils.log("Deduplicating output")
-        pages = sorted(set([(page_from, page_to)
-                            for page_from, page_to in pages_generator]))
-
-    for page_from, page_to in pages:
+    for page_from, page_to in pages_generator:
         if args.titles:
             writer.writerow((
                 page_from.id,
