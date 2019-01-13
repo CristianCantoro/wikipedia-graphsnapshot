@@ -97,7 +97,9 @@ def process_lines(
         stats: Mapping,
         pages_in_snapshot: Mapping,
         pages_redirected: Mapping,
-        add_titles: bool
+        ids_redirected: Mapping,
+        add_titles: bool,
+        trim_redirects: bool
         ) -> Iterator[list]:
     """Assign each revision to the snapshot to which they
        belong.
@@ -182,6 +184,12 @@ def process_lines(
                 wikilink = redirect
                 wikilink_id = redirect_id
 
+            if trim_redirects:
+                if dump_page.id in ids_redirected and \
+                        ids_redirected[dump_page.id] == wikilink_id:
+                    # it's a redirect page, we skip it
+                    continue
+
             # yield (page_from, page_to)
             if add_titles:
                 yield (Page(dump_page.id, dump_page.title, None),
@@ -199,6 +207,7 @@ def read_snapshot(reader, resolved_redirects=False):
 
     pages_in_snapshot = dict()
     pages_redirected = dict()
+    ids_redirected = dict()
     # 1: page_id
     # 2: page_title
     # 3: revision_id
@@ -224,9 +233,10 @@ def read_snapshot(reader, resolved_redirects=False):
         pages_in_snapshot[norm_page_title] = page_id
         if redirect_id != -1 and redirect_id != page_id:
             pages_redirected[norm_page_title] = norm_redirect_title
+            ids_redirected[page_id] = redirect_id
             pages_in_snapshot[norm_redirect_title] = redirect_id
 
-    return pages_in_snapshot, pages_redirected
+    return pages_in_snapshot, pages_redirected, ids_redirected
 
 
 def configure_subparsers(subparsers):
@@ -274,6 +284,11 @@ def configure_subparsers(subparsers):
         help="Output article titles in addition to ids."
     )
     parser.add_argument(
+        '--trim-redirects',
+        action='store_true',
+        help="Do not out redirect links."
+    )
+    parser.add_argument(
         '--keep-duplicate-links',
         action='store_true',
         help="Keep duplicate links."
@@ -306,6 +321,11 @@ def main(
     }
     stats['performance']['start_time'] = datetime.datetime.utcnow()
 
+    if args.trim_redirects and not args.resolved_redirects:
+        utils.log("Got --trim-redirect but no --resolved.redirects. "
+                  "This is unexected. Exiting.")
+        exit(1)
+
     match = basename_re.match(basename)
     year = int(match.group(1))
     month = int(match.group(2))
@@ -323,7 +343,7 @@ def main(
     if args.skip_snapshot_header:
         next(snapshot_reader)
 
-    pages_in_snapshot, pages_redirected = (
+    pages_in_snapshot, pages_redirected, ids_redirected = (
         read_snapshot(reader=snapshot_reader,
                       resolved_redirects=args.resolved_redirects)
         )
@@ -361,7 +381,9 @@ def main(
         stats,
         pages_in_snapshot=pages_in_snapshot,
         pages_redirected=pages_redirected,
-        add_titles=args.titles
+        ids_redirected=ids_redirected,
+        add_titles=args.titles,
+        trim_redirects=args.trim_redirects
         )
 
     if args.titles:
