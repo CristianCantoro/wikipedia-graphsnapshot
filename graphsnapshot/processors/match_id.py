@@ -194,11 +194,13 @@ def process_lines(
                 if dump_page.id in ids_redirected and \
                         ids_redirected[dump_page.id] == wikilink_id:
                     # it's a redirect page, we skip it
+                    dump_prevpage = dump_page
                     continue
 
             if not keep_duplicate_links:
                 item = (dump_page.id, wikilink_id)
                 if item in duplicates:
+                    dump_prevpage = dump_page
                     continue
                 else:
                     duplicates.add(item)
