@@ -83,11 +83,24 @@ stats_template = '''
     <performance>
         <start_time>${stats['performance']['start_time'] | x}</start_time>
         <end_time>${stats['performance']['end_time'] | x}</end_time>
-        <redirects_analyzed>${stats['performance']['redirects_analyzed'] | x}</redirects_analyzed>
-        <pages_analyzed>${stats['performance']['pages_analyzed'] | x}</pages_analyzed>
+        <new>
+            <pages_analyzed>${stats['performance']['new']['pages_analyzed'] | x}</pages_analyzed>
+            <revisions_analyzed>${stats['performance']['new']['revisions_analyzed'] | x}</revisions_analyzed>
+        </new>
+        <old>
+            <pages_analyzed>${stats['performance']['old']['pages_analyzed'] | x}</pages_analyzed>
+            <revisions_analyzed>${stats['performance']['old']['revisions_analyzed'] | x}</revisions_analyzed>
+        </old>
     </performance>
 </stats>
 '''
+
+
+# Look ahead one element in a Python generator
+# https://stackoverflow.com/a/2425347/2377454
+def peek_generator(g):
+    peek = next(g)
+    return peek, itertools.chain([peek], g)
 
 
 def progress(what: Optional[str]='.') -> None:
@@ -118,11 +131,7 @@ def process_pages(dump: Iterable[list],
     counter = 0
     lineno = 1
 
-    break_flag = False
-
     while True:
-        if break_flag:
-            break
 
         prevline = line
         prevpage = page
@@ -147,10 +156,18 @@ def process_pages(dump: Iterable[list],
         #     ('timestamp', jsonable.Type),
         #     ('data', dict),
         # ])
-        page = PageData(int(data['page_id']),
-                        arrow.get(data['revision_timestamp']),
-                        data
-                        )
+        try:
+            pid = int(data['page_id'])
+        except:
+            pid = -1
+
+        try:
+            revtimestamp = arrow.get(data['revision_timestamp'])
+        except:
+            # set timestamp to EPOCH
+            revtimestamp = arrow.get(0)
+
+        page = PageData(pid,revtimestamp,data)
 
         if prevpage is None:
             if which == 'old':
@@ -207,6 +224,8 @@ def process_pages(dump: Iterable[list],
             prevpage = page
 
         else:
+            if is_last_line:
+                yield None
             # cases:
             #   * this is the last revision of the dump
             #     (is_last_line is True)
@@ -291,7 +310,8 @@ def compare_data(old_data: Mapping,
         # take only the common columns
         columns_to_compare = old_keys.intersection(new_keys)
 
-    columns_to_compare = columns_to_compare.difference(exclude_columns)
+    if exclude_columns:
+        columns_to_compare = columns_to_compare.difference(exclude_columns)
 
     return equal_dicts(old_data, new_data, columns_to_compare)
 
@@ -413,6 +433,7 @@ def process_dumps(
     read_old = True
     read_new = True
     break_flag = False
+    count = 0
     while True:
         if break_flag:
             break
@@ -477,6 +498,26 @@ def process_dumps(
                                      )
 
             yield difflist
+
+        oldpagenext, old_generator = peek_generator(old_generator)
+        newpagenext, new_generator = peek_generator(new_generator)
+
+        if oldpagenext is None:
+            read_old = False
+
+        if newpagenext is None:
+            read_new = False
+
+        # if we do not need to read neither the new, nor the old file then
+        # we are finished
+        if read_old is False and read_new is False:
+            break_flag = True
+
+        if old_pageid == 2114 and new_pageid == 2114:
+            count += 1
+
+        if count > 1:
+            import ipdb; ipdb.set_trace()
 
 
 def configure_subparsers(subparsers):
@@ -721,8 +762,6 @@ def main(
     assert (new_extraction_date > DATE_START and \
                 new_extraction_date < DATE_NOW)
 
-    assert (new_extraction_date > old_extraction_date)
-
     selected_intervals = select_intervals(
         (base_chunk.pageid_first, base_chunk.pageid_last),
         new_chunks_ids
@@ -780,6 +819,8 @@ def main(
             change = diff[0]
             lineno = diff[1]
             data = json.dumps(diff[2])
+
+            # print("{}\t{}\t{}".format(change, lineno, data))
             writer.writerow([change, lineno, data])
 
     stats['performance']['end_time'] = datetime.datetime.utcnow()
