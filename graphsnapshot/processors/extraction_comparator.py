@@ -37,20 +37,20 @@ DATE_NOW = arrow.now()
 # example filenames:
 #   * enwiki-20150901-pages-meta-history1.xml-p000000010p000002861.7z.features.xml.gz
 #   * svwiki-20180301-pages-meta-history.xml.7z.features.xml.gz
+#
+# chunk_regex:
+# 1: lang
+# 2: date
+# 3: historyno
+# 4: pageid_first
+# 5: pageid_last
+# 6: dumpext
+# 7: ext
 chunk_regex =  r'([a-z]{2})wiki-(\d{8})'
 chunk_regex += r'-pages-meta-history(\d{1,2})?\.xml'
-chunk_regex += r'-p(\d+)p(\d+)\.(gz|bz2|7z)'
-chunk_regex += r'\.features\.xml(\.[^\.]+)(\.(gz|bz2|7z))?'
+chunk_regex += r'(?:-p(\d+)p(\d+))?\.(gz|bz2|7z)'
+chunk_regex += r'\.features\.xml(?:\.[^\.]+)(?:\.(gz|bz2|7z))?'
 re_chunk = re.compile(chunk_regex, re.IGNORECASE | re.DOTALL)
-
-# new chunk glob
-#   * enwiki-20180301-pages-meta-history1.xml-p10p2115.7z.features.xml.gz
-#     {lang}wiki-{date}-pages-meta-history{historyno}.xml
-#       -p{pageid_first}p{pageid_last}.{dumpext}.features.xml.{ext}
-new_chunk_pattern = '{lang}wiki-{date}'
-new_chunk_pattern += '-pages-meta-history{historyno}.xml'
-new_chunk_pattern += '-p{pageid_first}p{pageid_last}.{dumpext}'
-new_chunk_pattern += '.features.xml.{ext}'
 
 
 PageData = NamedTuple('PageData', [
@@ -608,18 +608,30 @@ def idtoint(pageid):
 
 
 def extract_name_elements(re_chunk_match):
+    # chunk_regex:
+    # 1: lang
+    # 2: date
+    # 3: historyno
+    # 4: pageid_first
+    # 5: pageid_last
+    # 6: dumpext
+    # 7: ext
     lang = re_chunk_match.group(1)
     date = re_chunk_match.group(2)
-    historyno = idtoint(re_chunk_match.group(3))
-    pageid_first = idtoint(re_chunk_match.group(4))
-    pageid_last = idtoint(re_chunk_match.group(5))
+    historyno = (idtoint(re_chunk_match.group(3))
+                 if re_chunk_match.group(3)
+                 else ''
+                 )
+    pageid_first = (idtoint(re_chunk_match.group(4))
+                    if re_chunk_match.group(4)
+                    else ''
+                    )
+    pageid_last = (idtoint(re_chunk_match.group(5))
+                   if re_chunk_match.group(5)
+                   else ''
+                   )
     dumpext = re_chunk_match.group(6)
-    ext = ''
-    try:
-        # ignore groups 7 and 8
-        ext = re_chunk_match.group(9)
-    except IndexError:
-        pass
+    ext = re_chunk_match.group(7) or ''
 
     return Chunkfile(lang,
                      date,
@@ -715,6 +727,23 @@ def main(
     assert (old_extraction_date > DATE_START and \
                 old_extraction_date < DATE_NOW)
 
+    # new chunk glob
+    #   * enwiki-20180301-pages-meta-history1.xml-p10p2115.7z.features.xml.gz
+    #     {lang}wiki-{date}-pages-meta-history{historyno}.xml
+    #       -p{pageid_first}p{pageid_last}.{dumpext}.features.xml.{ext}
+    new_chunk_pattern =  '{lang}wiki-{date}'
+    new_chunk_pattern += '-pages-meta-history{historyno}.xml'
+    new_chunk_pattern += '-p{pageid_first}p{pageid_last}.{dumpext}'
+    new_chunk_pattern += '.features.xml.{ext}'
+
+    if not base_chunk.historyno:
+        new_chunk_pattern = new_chunk_pattern.replace(r'{historyno}', '')
+
+    if not base_chunk.pageid_first or not base_chunk.pageid_first:
+        new_chunk_pattern = (new_chunk_pattern
+                             .replace(r'-p{pageid_first}p{pageid_last}', '')
+                             )
+
     # {lang}wiki-{date}-pages-meta-history{historyno}.xml
     #   -p{pageid_first}p{pageid_last}.{dumpext}.features.xml.{ext}
     new_chunk_glob = (new_chunk_pattern
@@ -729,9 +758,11 @@ def main(
 
     new_chunks_ids = []
     new_chunks_dates = set()
-    for cf in glob.glob(os.path.join(new_extractions_dir.as_posix(),
-                                     new_chunk_glob
-                                     )):
+
+    glob_path = os.path.join(new_extractions_dir.as_posix(),
+                             new_chunk_glob
+                             )
+    for cf in glob.glob(glob_path):
 
         cf_basename = os.path.basename(cf)
         new_match = re_chunk.match(cf_basename)
@@ -791,6 +822,11 @@ def main(
                 selected_chunks.add(cf)
 
     selected_chunks = sorted(selected_chunks, key=sort_chunks)
+
+    utils.log("Comparing with select chunks:")
+    for chunk in selected_chunks:
+        utils.log("  * {}.".format(chunk))
+    utils.log("---")
 
     header_old = args.header_old.split(',') if args.header_old else None
     header_new = args.header_new.split(',') if args.header_new else None
