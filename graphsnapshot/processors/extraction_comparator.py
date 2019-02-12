@@ -36,8 +36,9 @@ DATE_NOW = arrow.now()
 
 # example filenames:
 #   * enwiki-20150901-pages-meta-history1.xml-p000000010p000002861.7z.features.xml.gz
+#   * svwiki-20180301-pages-meta-history.xml.7z.features.xml.gz
 chunk_regex =  r'([a-z]{2})wiki-(\d{8})'
-chunk_regex += r'-pages-meta-history(\d{1,2})\.xml'
+chunk_regex += r'-pages-meta-history(\d{1,2})?\.xml'
 chunk_regex += r'-p(\d+)p(\d+)\.(gz|bz2|7z)'
 chunk_regex += r'\.features\.xml(\.[^\.]+)(\.(gz|bz2|7z))?'
 re_chunk = re.compile(chunk_regex, re.IGNORECASE | re.DOTALL)
