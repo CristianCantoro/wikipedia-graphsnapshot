@@ -23,6 +23,12 @@ from .. import file_utils as fu
 from .. import dumper
 
 
+# 9: wikilink.link
+# 10: wikilink.tosection
+# 11: wikilink.anchor
+# 12: wikilink.section_name
+# 13: wikilink.section_level
+# 14: wikilink.section_number
 Wikilink = NamedTuple('Wikilink', [
     ('link', str),
     ('tosection', str),
@@ -33,6 +39,14 @@ Wikilink = NamedTuple('Wikilink', [
 ])
 
 
+# 2: revision_id
+# 3: revision_parent_id
+# 5: user_type
+# 6: user_username
+# 7: user_id
+# 8: revision_minor
+# 4: revision_timestamp
+# 9: Wikilink
 Revision = NamedTuple('Revision', [
     ('id', int),
     ('parent_id', int),
@@ -45,6 +59,9 @@ Revision = NamedTuple('Revision', [
 ])
 
 
+# 0: page_id
+# 1: page_title
+# 2: Revision
 Page = NamedTuple('Page', [
     ('id', int),
     ('title', str),
