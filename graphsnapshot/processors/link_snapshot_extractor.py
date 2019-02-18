@@ -350,6 +350,22 @@ def main(
     writer.writerow(output_csv_header)
 
     for page, active_link in pages_generator:
+        # 1: page_id
+        # 2: page_title
+        # 3: revision_id
+        # 4: revision_parent_id
+        # 5: revision_timestamp
+        # 6: user_type
+        # 7: user_username
+        # 8: user_id
+        # 9: revision_minor
+        # 10: wikilink.link
+        # 11: wikilink.tosection
+        # 12: wikilink.anchor
+        # 13: wikilink.section_name
+        # 14: wikilink.section_level
+        # 15: wikilink.section_number
+        # 16: wikinlink.is_active
         writer.writerow((
             page.id,
             page.title,
@@ -361,6 +377,7 @@ def main(
             page.revision.user_id,
             page.revision.minor,
             page.revision.wikilink.link,
+            page.revision.wikilink.tosection,
             page.revision.wikilink.anchor,
             page.revision.wikilink.section_name,
             page.revision.wikilink.section_level,
