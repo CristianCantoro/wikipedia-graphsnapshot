@@ -33,12 +33,14 @@ NPRINTREVISION = 10000
 DATE_START = arrow.get('2001-01-16', 'YYYY-MM')
 DATE_NOW = arrow.now()
 
+CHUNK_REGEXES = {}
 
+# wikilink_chunk_regex:
+#
 # example filenames:
 #   * enwiki-20150901-pages-meta-history1.xml-p000000010p000002861.7z.features.xml.gz
 #   * svwiki-20180301-pages-meta-history.xml.7z.features.xml.gz
 #
-# chunk_regex:
 # 1: lang
 # 2: date
 # 3: historyno
@@ -46,11 +48,31 @@ DATE_NOW = arrow.now()
 # 5: pageid_last
 # 6: dumpext
 # 7: ext
-chunk_regex =  r'([a-z]{2})wiki-(\d{8})'
-chunk_regex += r'-pages-meta-history(\d{1,2})?\.xml'
-chunk_regex += r'(?:-p(\d+)p(\d+))?\.(gz|bz2|7z)'
-chunk_regex += r'\.features\.xml(?:\.[^\.]+)(?:\.(gz|bz2|7z))?'
-re_chunk = re.compile(chunk_regex, re.IGNORECASE | re.DOTALL)
+wikilink_chunk_regex =  r'([a-z]{2})wiki-(\d{8})'
+wikilink_chunk_regex += r'-pages-meta-history(\d{1,2})?\.xml'
+wikilink_chunk_regex += r'(?:-p(\d+)p(\d+))?\.(gz|bz2|7z)'
+wikilink_chunk_regex += r'\.features\.xml(?:\.[^\.]+)(?:\.(gz|bz2|7z))?'
+re_wikilink_chunk = re.compile(wikilink_chunk_regex, re.IGNORECASE | re.DOTALL)
+
+
+# linksnapshot_chunk_regex:
+#
+# example filenames:
+#   * enwiki.link_snapshot.2001-03-01.csv.gz
+#
+# 1: lang
+# 2: date
+# 3: ext
+linksnapshot_chunk_regex =  r'([a-z]{2})wiki\.'
+linksnapshot_chunk_regex += r'link_snapshot\.(\d{4}-\d{2}-\d{2})\.csv'
+linksnapshot_chunk_regex += r'(?:\.(gz|bz2|7z))?'
+re_linksnapshot_chunk = re.compile(linksnapshot_chunk_regex, re.IGNORECASE | re.DOTALL)
+
+
+CHUNK_REGEXES = {
+'wikilink': re_wikilink_chunk,
+'link-snapshots': re_linksnapshot_chunk,
+}
 
 
 PageData = NamedTuple('PageData', [
@@ -287,11 +309,19 @@ def get_header(dump: Iterable[list]) -> Iterable[list]:
 def equal_dicts(d1, d2, keys_to_compare):
     keys = set(keys_to_compare)
     for k1, v1 in d1.items():
-        if k1 in keys and (k1 not in d2 or d2[k1] != v1):
+        if k1 not in keys:
+            continue
+
+        if (k1 not in d2 or d2[k1] != v1):
             return False
+
     for k2, v2 in d2.items():
+        if k2 not in keys:
+            continue
+
         if k2 in keys and k2 not in d1:
             return False
+
     return True
 
 
@@ -408,12 +438,8 @@ def process_dumps(
 
     new_dump = itertools.chain.from_iterable([afile
                 for afile in map(fu.open_csv_file, selected_chunks)])
-
-    if header_old is None:
-        header_old = get_header(old_dump)
-
-    if header_new is None:
-        header_new = get_header(new_dump)
+    # skip header
+    next(new_dump)
 
     old_generator = process_pages(dump=old_dump,
                                   header=header_old,
@@ -537,11 +563,28 @@ def configure_subparsers(subparsers):
         'compare-extractions',
         help='Compare extractions.',
     )
+
     parser.add_argument(
         '--new-extractions-dir',
         type=is_dir,
         required=True,
         help='Directory with the new extractions.'
+    )
+
+    parser.add_argument(
+        '--extractions-type',
+        type=str,
+        required=True,
+        choices=list(CHUNK_REGEXES.keys()),
+        help='Type of extractions.'
+    )
+
+    parser.add_argument(
+        '--new-chunks',
+        type=str,
+        nargs='+',
+        default=None,
+        help='New chunks [default: infer from input].'
     )
 
     parser.add_argument(
@@ -607,39 +650,60 @@ def idtoint(pageid):
     return int(pageid.lstrip('0'))
 
 
-def extract_name_elements(re_chunk_match):
-    # chunk_regex:
-    # 1: lang
-    # 2: date
-    # 3: historyno
-    # 4: pageid_first
-    # 5: pageid_last
-    # 6: dumpext
-    # 7: ext
-    lang = re_chunk_match.group(1)
-    date = re_chunk_match.group(2)
-    historyno = (idtoint(re_chunk_match.group(3))
-                 if re_chunk_match.group(3)
-                 else ''
-                 )
-    pageid_first = (idtoint(re_chunk_match.group(4))
-                    if re_chunk_match.group(4)
-                    else ''
-                    )
-    pageid_last = (idtoint(re_chunk_match.group(5))
-                   if re_chunk_match.group(5)
-                   else ''
-                   )
-    dumpext = re_chunk_match.group(6)
-    ext = re_chunk_match.group(7) or ''
+def extract_name_elements(match, ext_type):
+    res = None
+    if ext_type == 'wikilink':
+        # wikilink_chunk_regex:
+        # 1: lang
+        # 2: date
+        # 3: historyno
+        # 4: pageid_first
+        # 5: pageid_last
+        # 6: dumpext
+        # 7: ext
+        lang = match.group(1)
+        date = match.group(2)
+        historyno = (idtoint(match.group(3))
+                     if match.group(3)
+                     else ''
+                     )
+        pageid_first = (idtoint(match.group(4))
+                        if match.group(4)
+                        else ''
+                        )
+        pageid_last = (idtoint(match.group(5))
+                       if match.group(5)
+                       else ''
+                       )
+        dumpext = match.group(6)
+        ext = match.group(7) or ''
 
-    return Chunkfile(lang,
-                     date,
-                     historyno,
-                     pageid_first,
-                     pageid_last,
-                     dumpext,
-                     ext)
+        res = Chunkfile(lang,
+                        date,
+                        historyno,
+                        pageid_first,
+                        pageid_last,
+                        dumpext,
+                        ext)
+
+    elif ext_type == 'link-snapshots':
+        # linksnapshot_chunk_regex:
+        # 1: lang
+        # 2: date
+        # 3: ext
+        lang = match.group(1)
+        date = match.group(2)
+        ext = match.group(3) or ''
+
+        res = Chunkfile(lang,
+                        date,
+                        None,
+                        -1,
+                        -1,
+                        None,
+                        ext)
+
+    return res
 
 
 def select_intervals(old_interval, new_intervals_list):
@@ -664,69 +728,7 @@ def sort_chunks(chunk_path):
     return achunk.pageid_first
 
 
-def main(
-        dump: Iterable[list],
-        basename: str,
-        args) -> None:
-    """Main function that parses the arguments and writes the output."""
-    stats = {
-        'performance': {
-            'start_time': None,
-            'end_time': None,
-            'old': {
-                'pages_analyzed': 0,
-                'revisions_analyzed': 0,
-                'lines': 0
-                },
-            'new': {
-                'pages_analyzed': 0,
-                'revisions_analyzed': 0,
-                'lines': 0
-            }
-        }
-    }
-    stats['performance']['start_time'] = datetime.datetime.utcnow()
-
-
-    inputfile_full_path = [afile for afile in args.files
-                           if afile.name == basename][0]
-
-    new_extractions_dir = args.new_extractions_dir
-    ignore_newer = args.ignore_newer
-
-    if args.dry_run:
-        pages_output = open(os.devnull, 'wt')
-        stats_output = open(os.devnull, 'wt')
-    else:
-        filename = str(args.output_dir_path /
-                       (basename + '.compare_extractions.features.csv'))
-        pages_output = fu.output_writer(
-            path=filename,
-            compression=args.output_compression,
-        )
-        stats_output = fu.output_writer(
-            path=str(args.output_dir_path/
-                    (basename + '.compare_extractions.stats.xml')),
-            compression=args.output_compression,
-        )
-
-    base_match = re_chunk.match(basename)
-    if base_match:
-        base_chunk = extract_name_elements(base_match)
-    else:
-        msg = ("Unexpected name for input file: {filename} ({path})"
-               .format(filename=basename, path=inputfile_full_path))
-        raise ValueError(msg)
-        del msg
-
-    if args.old_extraction_date is None:
-        old_extraction_date = arrow.get(base_chunk.date, 'YYYYMMDD')
-    else:
-        old_extraction_date = arrow.get(args.old_extraction_date)
-
-    assert (old_extraction_date > DATE_START and \
-                old_extraction_date < DATE_NOW)
-
+def select_chunks(base_chunk, args):
     # new chunk glob
     #   * enwiki-20180301-pages-meta-history1.xml-p10p2115.7z.features.xml.gz
     #     {lang}wiki-{date}-pages-meta-history{historyno}.xml
@@ -823,6 +825,90 @@ def main(
 
     selected_chunks = sorted(selected_chunks, key=sort_chunks)
 
+    return selected_chunks
+
+
+def main(
+        dump: Iterable[list],
+        basename: str,
+        args) -> None:
+    """Main function that parses the arguments and writes the output."""
+    stats = {
+        'performance': {
+            'start_time': None,
+            'end_time': None,
+            'old': {
+                'pages_analyzed': 0,
+                'revisions_analyzed': 0,
+                'lines': 0
+                },
+            'new': {
+                'pages_analyzed': 0,
+                'revisions_analyzed': 0,
+                'lines': 0
+            }
+        }
+    }
+    stats['performance']['start_time'] = datetime.datetime.utcnow()
+
+
+    inputfile_full_path = [afile for afile in args.files
+                           if afile.name == basename][0]
+
+    new_extractions_dir = args.new_extractions_dir
+    ignore_newer = args.ignore_newer
+
+    if args.dry_run:
+        pages_output = open(os.devnull, 'wt')
+        stats_output = open(os.devnull, 'wt')
+    else:
+        filename = str(args.output_dir_path /
+                       (basename + '.compare_extractions.features.csv'))
+        pages_output = fu.output_writer(
+            path=filename,
+            compression=args.output_compression,
+        )
+        stats_output = fu.output_writer(
+            path=str(args.output_dir_path/
+                    (basename + '.compare_extractions.stats.xml')),
+            compression=args.output_compression,
+        )
+
+    re_chunk = CHUNK_REGEXES[args.extractions_type]
+    base_match = re_chunk.match(basename)
+
+    if base_match:
+        base_chunk = extract_name_elements(match=base_match,
+                                           ext_type=args.extractions_type)
+    else:
+        msg = ("Unexpected name for input file: {filename} ({path})"
+               .format(filename=basename, path=inputfile_full_path))
+        raise ValueError(msg)
+        del msg
+
+    if args.old_extraction_date is None:
+        old_extraction_date = arrow.get(base_chunk.date, 'YYYYMMDD')
+    else:
+        old_extraction_date = arrow.get(args.old_extraction_date)
+
+    assert (old_extraction_date > DATE_START and \
+                old_extraction_date < DATE_NOW)
+
+    selected_chunks = []
+    if not args.new_chunks:
+        if args.extractions_type == 'wikilinks':
+            selected_chunks = select_chunks(base_chunk, args)
+        else:
+            raise NotImplementedError(
+                'Can not handle chunk selection automatically'
+                'for extractions of type {}.'
+                .format(args.extractions_type)
+                )
+    else:
+        selected_chunks = [str(args.new_extractions_dir/chunk)
+                           for chunk in args.new_chunks
+                           ]
+
     utils.log("Comparing with select chunks:")
     for chunk in selected_chunks:
         utils.log("  * {}.".format(chunk))
@@ -830,6 +916,12 @@ def main(
 
     header_old = args.header_old.split(',') if args.header_old else None
     header_new = args.header_new.split(',') if args.header_new else None
+
+    if header_old is None:
+        header_old = get_header(dump)
+
+    if header_new is None:
+        header_new = get_header(fu.open_csv_file(selected_chunks[0]))
 
     ignore_newer_than = DATE_NOW
     if ignore_newer:
@@ -850,15 +942,44 @@ def main(
         only_last_revision=args.only_last_revision,
         )
 
-    writer = csv.writer(pages_output)
+    one_header = False
+    if not (set(header_old) - set(header_new)):
+        one_header = True
+        writer = csv.DictWriter(pages_output,
+                                fieldnames=['change', 'lineno']+header_old)
+    else:
+        old_fields = ['old.{}'.format(field)
+                      for field in header_old]
+        new_fields = ['new.{}'.format(field)
+                      for field in header_new]
+        writer = csv.DictWriter(
+            pages_output,
+            fieldnames=['change', 'lineno']+old_fields+new_fields)
+
+    writer.writeheader()
+
     for difflist in difflist_generator:
         for diff in difflist:
             change = diff[0]
             lineno = diff[1]
-            data = json.dumps(diff[2])
+            changedata = diff[2]
 
-            # print("{}\t{}\t{}".format(change, lineno, data))
-            writer.writerow([change, lineno, data])
+            if one_header:
+                data = {'change': change,
+                        'lineno': lineno,
+                        **changedata
+                        }
+            else:
+                old_fields = [('old.{}'.format(key), changedata[key])
+                              for key in changedatachangedata if key in header_old
+                              ]
+                new_fields = [('new.{}'.format(key), changedata[key])
+                              for key in changedata if key in header_new
+                              ]
+
+                data = dict(old_fields+new_fields)
+
+            writer.writerow(data)
 
     stats['performance']['end_time'] = datetime.datetime.utcnow()
 
