@@ -19,7 +19,8 @@ import itertools
 import functools
 import collections
 from io import StringIO
-from typing import (Iterable, Iterator, Mapping, NamedTuple, Optional)
+from typing import (Iterable, Iterator, Mapping, NamedTuple, Optional,
+                    Callable)
 
 import more_itertools
 
@@ -129,15 +130,30 @@ def peek_generator(g):
 def progress(what: Optional[str]='.') -> None:
     print(what, end='', file=sys.stderr, flush=True)
 
+def sort_revisions(
+    sort_columns: Iterable[list]
+    ) -> Callable[[Iterable[tuple]], Iterable[list]]:
 
-def sort_revisions(rev):
-    return (rev[1].timestamp, rev[0])
+    def mysort(rev):
+        keys = []
+        for col in sort_columns:
+            if col == 'revision_timestamp':
+                keys.append(rev[1].timestamp)
+            elif col == 'page_id':
+                keys.append(rev[1].id)
+            else:
+                keys.append(rev[1].data[col])
+        keys.append(rev[0])
 
+        return keys
+
+    return mysort
 
 def process_pages(dump: Iterable[list],
                   header: Iterable[list],
                   stats: Mapping,
                   max_timestamp: arrow.arrow.Arrow,
+                  sort_columns: Iterable[list],
                   only_last_revision: Optional[bool]=False,
                   which: Optional[str]='old') -> Iterator[list]:
 
@@ -153,6 +169,8 @@ def process_pages(dump: Iterable[list],
 
     counter = 0
     lineno = 1
+
+    custom_sort = sort_revisions(sort_columns)
 
     while True:
 
@@ -257,7 +275,7 @@ def process_pages(dump: Iterable[list],
 
             # sort all the revision by timestamp (they are not guaranted to be
             # ordered)
-            sorted_revisions = sorted(revisions, key=sort_revisions)
+            sorted_revisions = sorted(revisions, key=custom_sort)
 
             # if we only want the sorted_revisions list is limited to the
             # last element.
@@ -432,6 +450,7 @@ def process_dumps(
         header_new: Iterable[list],
         all_columns: bool,
         exclude_columns: Iterable[list],
+        sort_columns: Iterable[list],
         only_last_revision: bool=False) -> Iterator[list]:
     """Compare revisions in `old_dump` with revisions from `selected_chunks`.
     """
@@ -445,6 +464,7 @@ def process_dumps(
                                   header=header_old,
                                   stats=stats['performance']['old'],
                                   max_timestamp=max_timestamp,
+                                  sort_columns=sort_columns,
                                   only_last_revision=only_last_revision,
                                   which='old'
                                   )
@@ -453,6 +473,7 @@ def process_dumps(
                                   header=header_new,
                                   stats=stats['performance']['new'],
                                   max_timestamp=max_timestamp,
+                                  sort_columns=sort_columns,
                                   only_last_revision=only_last_revision,
                                   which='new'
                                   )
@@ -634,8 +655,17 @@ def configure_subparsers(subparsers):
         '-x',
         '--exclude-columns',
         type=str,
+        default='revision_timestamp',
         help='List of comma-separated column names to exclude from the '
              'comparison.'
+    )
+    parser.add_argument(
+        '-s',
+        '--sort-columns',
+        type=str,
+        default='revision_timestamp',
+        help='List of comma-separated column names to use to sort the '
+             'dumps when comparing [default: revision_timestamp].'
     )
     parser.add_argument(
         '--only-last-revision',
@@ -930,6 +960,9 @@ def main(
     exclude_columns = (args.exclude_columns.split(',')
                        if args.exclude_columns else None)
 
+    sort_columns = (args.sort_columns.split(',')
+                       if args.sort_columns else None)
+
     difflist_generator = process_dumps(
         dump,
         stats,
@@ -939,6 +972,7 @@ def main(
         header_new=header_new,
         all_columns=args.all_columns,
         exclude_columns=exclude_columns,
+        sort_columns=sort_columns,
         only_last_revision=args.only_last_revision,
         )
 
