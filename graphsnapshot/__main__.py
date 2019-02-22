@@ -46,6 +46,7 @@ def get_args():
     processors.match_ngi_id.configure_subparsers(subparsers)
     processors.redirect_resolver.configure_subparsers(subparsers)
     processors.extraction_comparator.configure_subparsers(subparsers)
+    processors.filter_field.configure_subparsers(subparsers)
 
     parsed_args = parser.parse_args()
     if 'func' not in parsed_args:
