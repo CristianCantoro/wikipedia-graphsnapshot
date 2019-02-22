@@ -236,12 +236,6 @@ def process_pages(dump: Iterable[list],
             counter = 0
             stats['pages_analyzed'] += 1
 
-        # if prevpage is None or \
-        #         prevpage.revision.id != page.revision.id
-        if prevpage is None or \
-                int(prevpage.data['revision_id']) != int(page.data['revision_id']):
-            stats['revisions_analyzed'] += 1
-
         if not is_last_line and \
                 (prevpage is None or prevpage.id == page.id):
             # it is not the last revision, futhermore two cases:
@@ -263,6 +257,7 @@ def process_pages(dump: Iterable[list],
 
             if page.timestamp <= max_timestamp:
                 revisions.append( (lineno, page) )
+                stats['revisions_analyzed'] += 1
 
             prevpage = page
 
@@ -495,7 +490,6 @@ def process_dumps(
             #                if page.revision.timestamp <= max_timestamp]
             oldpagehist = next(old_generator)
             old_head = oldpagehist[0]
-
 
         if read_new:
             # newpagehist = [(line, page) for line, page in next(new_generator)
