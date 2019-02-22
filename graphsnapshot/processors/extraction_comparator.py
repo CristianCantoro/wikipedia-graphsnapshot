@@ -141,6 +141,8 @@ def sort_revisions(
                 keys.append(rev[1].timestamp)
             elif col == 'page_id':
                 keys.append(rev[1].id)
+            elif col == 'lineno':
+                keys.append(rev[0])
             else:
                 keys.append(rev[1].data[col])
         keys.append(rev[0])
@@ -387,7 +389,7 @@ def compare_pages(old_hist: Iterable[list],
     mod_count = 0
     add_count = 0
     sub_count = 0
-    diff = []
+    difflist = []
     while (i < len(old_hist) or j < len(new_hist)):
         lineno, old = old_hist[i] if i < len(old_hist) else (None, None)
         lineno, new = new_hist[j] if j < len(new_hist) else (None, None)
@@ -410,20 +412,20 @@ def compare_pages(old_hist: Iterable[list],
                 # old != new:
                 mod_count = mod_count + 1
 
-                diff.append( ('-', lineno, old.data) )
-                diff.append( ('+', lineno, new.data) )
+                difflist.append( ('-', lineno, old.data) )
+                difflist.append( ('+', lineno, new.data) )
                 # --- if old and new and old != new
 
         if new and old is None:
             add_count = add_count + 1
 
-            diff.append( ('+', lineno, new.data) )
+            difflist.append( ('+', lineno, new.data) )
             # --- if new and old is None
 
         if old and new is None:
             sub_count = sub_count + 1
 
-            diff.append( ('-', lineno, old.data) )
+            difflist.append( ('-', lineno, old.data) )
             # --- if old and new is None
 
         i = i + 1
@@ -438,7 +440,9 @@ def compare_pages(old_hist: Iterable[list],
                    )
     print(' ({})'.format(diff_string), file=sys.stderr, flush=True)
 
-    return diff
+    if difflist:
+        for diff in difflist:
+            yield diff
 
 
 def process_dumps(
@@ -663,14 +667,20 @@ def configure_subparsers(subparsers):
         '-s',
         '--sort-columns',
         type=str,
-        default='revision_timestamp',
+        default='lineno,revision_timestamp',
         help='List of comma-separated column names to use to sort the '
-             'dumps when comparing [default: revision_timestamp].'
+             'dumps when comparing [default: lineno,revision_timestamp].'
     )
     parser.add_argument(
         '--only-last-revision',
         action='store_true',
         help='Consider only the last revision for each page.'
+    )
+    parser.add_argument(
+        '--exit-on-diff',
+        action='store_true',
+        help='Exit when the page with differences has been found, after '
+             'processing the whole page.'
     )
 
     parser.set_defaults(func=main)
@@ -971,6 +981,7 @@ def main(
 
     sort_columns = (args.sort_columns.split(',')
                        if args.sort_columns else None)
+    import ipdb; ipdb.set_trace()
 
     difflist_generator = process_dumps(
         dump,
@@ -1001,28 +1012,40 @@ def main(
 
     writer.writeheader()
 
+    exit_flag = False
     for difflist in difflist_generator:
         for diff in difflist:
-            change = diff[0]
-            lineno = diff[1]
-            changedata = diff[2]
+            if diff:
+                change = diff[0]
+                lineno = diff[1]
+                changedata = diff[2]
 
-            if one_header:
-                data = {'change': change,
-                        'lineno': lineno,
-                        **changedata
-                        }
+                if one_header:
+                    data = {'change': change,
+                            'lineno': lineno,
+                            **changedata
+                            }
+                else:
+                    old_fields = [('old.{}'.format(key), changedata[key])
+                                  for key in changedatachangedata if key in header_old
+                                  ]
+                    new_fields = [('new.{}'.format(key), changedata[key])
+                                  for key in changedata if key in header_new
+                                  ]
+
+                    data = dict(old_fields+new_fields)
+
+                writer.writerow(data)
+
+                if args.exit_on_diff:
+                    exit_flag = True
             else:
-                old_fields = [('old.{}'.format(key), changedata[key])
-                              for key in changedatachangedata if key in header_old
-                              ]
-                new_fields = [('new.{}'.format(key), changedata[key])
-                              for key in changedata if key in header_new
-                              ]
+                # empty diff
+                pass
 
-                data = dict(old_fields+new_fields)
-
-            writer.writerow(data)
+        if args.exit_on_diff and exit_flag:
+            utils.log("Exit on diff. Exiting.")
+            exit(0)
 
     stats['performance']['end_time'] = datetime.datetime.utcnow()
 
