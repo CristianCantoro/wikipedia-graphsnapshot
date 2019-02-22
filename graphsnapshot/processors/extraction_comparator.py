@@ -565,12 +565,6 @@ def process_dumps(
         if read_old is False and read_new is False:
             break_flag = True
 
-        if old_pageid == 2114 and new_pageid == 2114:
-            count += 1
-
-        if count > 1:
-            import ipdb; ipdb.set_trace()
-
 
 def configure_subparsers(subparsers):
     """Configure a new subparser ."""
@@ -981,7 +975,6 @@ def main(
 
     sort_columns = (args.sort_columns.split(',')
                        if args.sort_columns else None)
-    import ipdb; ipdb.set_trace()
 
     difflist_generator = process_dumps(
         dump,
