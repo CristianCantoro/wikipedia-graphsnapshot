@@ -36,7 +36,7 @@ DATE_NOW = arrow.now()
 
 CHUNK_REGEXES = {}
 
-# wikilink_chunk_regex:
+# wikilinks_chunk_regex:
 #
 # example filenames:
 #   * enwiki-20150901-pages-meta-history1.xml-p000000010p000002861.7z.features.xml.gz
@@ -49,11 +49,11 @@ CHUNK_REGEXES = {}
 # 5: pageid_last
 # 6: dumpext
 # 7: ext
-wikilink_chunk_regex =  r'([a-z]{2})wiki-(\d{8})'
-wikilink_chunk_regex += r'-pages-meta-history(\d{1,2})?\.xml'
-wikilink_chunk_regex += r'(?:-p(\d+)p(\d+))?\.(gz|bz2|7z)'
-wikilink_chunk_regex += r'\.features\.xml(?:\.[^\.]+)(?:\.(gz|bz2|7z))?'
-re_wikilink_chunk = re.compile(wikilink_chunk_regex, re.IGNORECASE | re.DOTALL)
+wikilinks_chunk_regex =  r'([a-z]{2})wiki-(\d{8})'
+wikilinks_chunk_regex += r'-pages-meta-history(\d{1,2})?\.xml'
+wikilinks_chunk_regex += r'(?:-p(\d+)p(\d+))?\.(gz|bz2|7z)'
+wikilinks_chunk_regex += r'\.features\.xml(?:\.[^\.]+)(?:\.(gz|bz2|7z))?'
+re_wikilink_chunk = re.compile(wikilinks_chunk_regex, re.IGNORECASE | re.DOTALL)
 
 
 # linksnapshot_chunk_regex:
@@ -71,7 +71,7 @@ re_linksnapshot_chunk = re.compile(linksnapshot_chunk_regex, re.IGNORECASE | re.
 
 
 CHUNK_REGEXES = {
-'wikilink': re_wikilink_chunk,
+'wikilinks': re_wikilink_chunk,
 'link-snapshots': re_linksnapshot_chunk,
 }
 
@@ -595,9 +595,9 @@ def configure_subparsers(subparsers):
     parser.add_argument(
         '--extractions-type',
         type=str,
-        required=True,
+        default='wikilinks',
         choices=list(CHUNK_REGEXES.keys()),
-        help='Type of extractions.'
+        help='Type of extractions [default: wikinlinks].'
     )
 
     parser.add_argument(
@@ -609,13 +609,13 @@ def configure_subparsers(subparsers):
     )
 
     parser.add_argument(
-        '--old-extraction-date',
+        '--old-extractions-date',
         default=None,
         help='Last date from new extraction [default: infer from filename].'
     )
 
     parser.add_argument(
-        '--new-extraction-date',
+        '--new-extractions-date',
         action='store_true',
         default=None,
         help='Last date from new extraction [default: infer from filename].'
@@ -682,8 +682,8 @@ def idtoint(pageid):
 
 def extract_name_elements(match, ext_type):
     res = None
-    if ext_type == 'wikilink':
-        # wikilink_chunk_regex:
+    if ext_type == 'wikilinks':
+        # wikilinks_chunk_regex:
         # 1: lang
         # 2: date
         # 3: historyno
@@ -732,6 +732,8 @@ def extract_name_elements(match, ext_type):
                         -1,
                         None,
                         ext)
+    else:
+        raise ValueError('Unexpected value for ext_type.')
 
     return res
 
@@ -750,15 +752,19 @@ def select_intervals(old_interval, new_intervals_list):
     return intervals
 
 
-def sort_chunks(chunk_path):
-    chunk_basename = os.path.basename(chunk_path)
-    match = re_chunk.match(chunk_basename)
-    achunk = extract_name_elements(match)
+def sort_chunks_factory(ext_type):
 
-    return achunk.pageid_first
+    def sort_chunks(chunk_path):
+        chunk_basename = os.path.basename(chunk_path)
+        match = CHUNK_REGEXES[ext_type].match(chunk_basename)
+        achunk = extract_name_elements(match, ext_type)
+
+        return achunk.pageid_first
+
+    return sort_chunks
 
 
-def select_chunks(base_chunk, args):
+def select_chunks(base_chunk, ext_type, args):
     # new chunk glob
     #   * enwiki-20180301-pages-meta-history1.xml-p10p2115.7z.features.xml.gz
     #     {lang}wiki-{date}-pages-meta-history{historyno}.xml
@@ -791,15 +797,15 @@ def select_chunks(base_chunk, args):
     new_chunks_ids = []
     new_chunks_dates = set()
 
-    glob_path = os.path.join(new_extractions_dir.as_posix(),
+    glob_path = os.path.join(args.new_extractions_dir.as_posix(),
                              new_chunk_glob
                              )
     for cf in glob.glob(glob_path):
 
         cf_basename = os.path.basename(cf)
-        new_match = re_chunk.match(cf_basename)
+        new_match = CHUNK_REGEXES[ext_type].match(cf_basename)
         if new_match:
-            new_chunk = extract_name_elements(new_match)
+            new_chunk = extract_name_elements(new_match, ext_type)
             new_chunks_ids.append((new_chunk.pageid_first,
                                   new_chunk.pageid_last)
                                  )
@@ -812,19 +818,19 @@ def select_chunks(base_chunk, args):
             del msg
     new_chunks_ids.sort()
 
-    if args.new_extraction_date is None:
+    if args.new_extractions_date is None:
         if len(new_chunks_dates) > 1:
             msg = ("Multiple dates extracted from new chunks filenames")
             raise ValueError(msg)
             del msg
 
         new_date = new_chunks_dates.pop()
-        new_extraction_date = arrow.get(new_date, 'YYYYMMDD')
+        new_extractions_date = arrow.get(new_date, 'YYYYMMDD')
     else:
-        new_extraction_date = arrow.get(args.new_extraction_date)
+        new_extractions_date = arrow.get(args.new_extractions_date)
 
-    assert (new_extraction_date > DATE_START and \
-                new_extraction_date < DATE_NOW)
+    assert (new_extractions_date > DATE_START and \
+                new_extractions_date < DATE_NOW)
 
     selected_intervals = select_intervals(
         (base_chunk.pageid_first, base_chunk.pageid_last),
@@ -833,7 +839,7 @@ def select_chunks(base_chunk, args):
 
     new_chunk_glob = (new_chunk_pattern
                       .format(lang=base_chunk.lang,
-                               date=new_extraction_date.format('YYYYMMDD'),
+                               date=new_extractions_date.format('YYYYMMDD'),
                                historyno='*',
                                pageid_first='*',
                                pageid_last='*',
@@ -842,18 +848,20 @@ def select_chunks(base_chunk, args):
                       )
 
     selected_chunks = set()
-    for cf in glob.glob(os.path.join(new_extractions_dir.as_posix(),
+    for cf in glob.glob(os.path.join(args.new_extractions_dir.as_posix(),
                                      new_chunk_glob
                                      )):
         cf_basename = os.path.basename(cf)
-        new_match = re_chunk.match(cf_basename)
+        new_match = CHUNK_REGEXES[ext_type].match(cf_basename)
         if new_match:
-            new_chunk = extract_name_elements(new_match)
+            new_chunk = extract_name_elements(new_match, ext_type)
             if (new_chunk.pageid_first, new_chunk.pageid_last) in \
                     selected_intervals:
                 selected_chunks.add(cf)
 
-    selected_chunks = sorted(selected_chunks, key=sort_chunks)
+    selected_chunks = sorted(selected_chunks,
+                             key=sort_chunks_factory(ext_type)
+                             )
 
     return selected_chunks
 
@@ -885,7 +893,6 @@ def main(
     inputfile_full_path = [afile for afile in args.files
                            if afile.name == basename][0]
 
-    new_extractions_dir = args.new_extractions_dir
     ignore_newer = args.ignore_newer
 
     if args.dry_run:
@@ -916,21 +923,23 @@ def main(
         raise ValueError(msg)
         del msg
 
-    if args.old_extraction_date is None:
-        old_extraction_date = arrow.get(base_chunk.date, 'YYYYMMDD')
+    if args.old_extractions_date is None:
+        old_extractions_date = arrow.get(base_chunk.date, 'YYYYMMDD')
     else:
-        old_extraction_date = arrow.get(args.old_extraction_date)
+        old_extractions_date = arrow.get(args.old_extractions_date)
 
-    assert (old_extraction_date > DATE_START and \
-                old_extraction_date < DATE_NOW)
+    assert (old_extractions_date > DATE_START and \
+                old_extractions_date < DATE_NOW)
 
     selected_chunks = []
     if not args.new_chunks:
         if args.extractions_type == 'wikilinks':
-            selected_chunks = select_chunks(base_chunk, args)
+            selected_chunks = select_chunks(base_chunk,
+                                            args.extractions_type,
+                                            args)
         else:
             raise NotImplementedError(
-                'Can not handle chunk selection automatically'
+                'Can not handle chunk selection automatically '
                 'for extractions of type {}.'
                 .format(args.extractions_type)
                 )
@@ -955,7 +964,7 @@ def main(
 
     ignore_newer_than = DATE_NOW
     if ignore_newer:
-        ignore_newer_than = old_extraction_date
+        ignore_newer_than = old_extractions_date
 
     exclude_columns = (args.exclude_columns.split(',')
                        if args.exclude_columns else None)
