@@ -1038,7 +1038,7 @@ def main(
 
         if args.exit_on_diff and exit_flag:
             utils.log("Exit on diff. Exiting.")
-            exit(0)
+            break
 
     stats['performance']['end_time'] = datetime.datetime.utcnow()
 
