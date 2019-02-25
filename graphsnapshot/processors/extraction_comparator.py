@@ -22,12 +22,16 @@ from io import StringIO
 from typing import (Iterable, Iterator, Mapping, NamedTuple, Optional,
                     Callable, Tuple)
 
+import regex
+import operator
 import more_itertools
+from deepdiff import DeepDiff
 
 from .. import utils
 from .. import file_utils as fu
 from .. import dumper
 
+from pprint import pprint
 
 NPRINTREVISION = 10000
 
@@ -99,21 +103,6 @@ Chunkfile = NamedTuple('Chunkfile', [
     ('pageid_last', int),
     ('dumpext', str),
     ('ext', str),
-])
-
-
-# - DiffTuple
-#   - equal_count
-#   - mod_count
-#   - add_count
-#   - sub_count
-#   - diff
-DiffTuple = NamedTuple('DiffTuple', [
-    ('equal_count', int),
-    ('mod_count', int),
-    ('add_count', int),
-    ('sub_count', int),
-    ('diff', Tuple),
 ])
 
 
@@ -346,34 +335,36 @@ def get_header(dump: Iterable[list]) -> Iterable[list]:
 
     return header 
 
-def equal_dicts(d1, d2, keys_to_compare):
-    keys = set(keys_to_compare)
-    for k1, v1 in d1.items():
-        if k1 not in keys:
-            continue
 
-        if (k1 not in d2 or d2[k1] != v1):
-            return False
-
-    for k2, v2 in d2.items():
-        if k2 not in keys:
-            continue
-
-        if k2 in keys and k2 not in d1:
-            return False
-
-    return True
+root_re = regex.compile(r'root\[(\d+)\]')
 
 
-def compare_data(old_data: Mapping,
-                 new_data: Mapping,
-                 exclude_columns: Iterable[list],
-                 all_columns: bool) -> bool:
+def compare_pages(old_hist: Iterable[list],
+                  new_hist: Iterable[list],
+                  header_old: Iterable[list],
+                  header_new: Iterable[list],
+                  all_columns: bool,
+                  exclude_columns: Iterable[list],
+                  ignore_order: Optional[bool]=True,
+                  ) -> Iterable[list]:
 
-    old_keys = set(old_data.keys())
-    new_keys = set(new_data.keys())
+    utils.log('<{old} ({nrevold}), {new} ({nrevnew})> '
+              .format(old=old_hist[0]['page'].data['page_title'],
+                      new=new_hist[0]['page'].data['page_title'],
+                      nrevold=len(old_hist),
+                      nrevnew=len(new_hist)
+                      )
+              )
+
+    equal_count = 0
+    mod_count = 0
+    add_count = 0
+    sub_count = 0
+    difflist = []
 
     columns_to_compare = set()
+    old_keys = set(old_hist[0]['page'].data.keys())
+    new_keys = set(new_hist[0]['page'].data.keys())
     if all_columns:
         # take all the columns
         columns_to_compare = old_keys.union(new_keys)
@@ -384,214 +375,54 @@ def compare_data(old_data: Mapping,
     if exclude_columns:
         columns_to_compare = columns_to_compare.difference(exclude_columns)
 
-    return equal_dicts(old_data, new_data, columns_to_compare)
+    differences = DeepDiff([{k: el['page'].data[k] 
+                             for k in columns_to_compare}
+                            for el in old_hist
+                            ],
+                           [{k: el['page'].data[k] 
+                             for k in columns_to_compare}
+                            for el in new_hist
+                            ],
+                           ignore_order=ignore_order,
+                           )
 
 
-def compute_diff(lineno_old: int,
-                 old: Iterable[list],
-                 lineno_new: int,
-                 new: Iterable[list],
-                 all_columns: bool,
-                 exclude_columns: Iterable[list]
-                 ) -> Tuple[int, int, int, int, Iterable[list]]:
-
-    equal_count = 0
-    mod_count = 0
-    add_count = 0
-    sub_count = 0
-    dlist = []
-    if old and new:
-        if compare_data(old_data=old.data,
-                        new_data=new.data,
-                        all_columns=all_columns,
-                        exclude_columns=exclude_columns):
-            # old == new:
-            equal_count = equal_count + 1
-            # --- if old and new and old == new
-
-        else:
-            # old != new:
-            mod_count = mod_count + 1
-
-            dlist.append( ('-', lineno_old, old.data) )
-            dlist.append( ('+', lineno_new, new.data) )
-            # --- if old and new and old != new
-
-    if new and old is None:
-        add_count = add_count + 1
-
-        dlist.append( ('+', lineno_new, new.data) )
-        # --- if new and old is None
-
-    if old and new is None:
-        sub_count = sub_count + 1
-
-        dlist.append( ('-', lineno_old, old.data) )
-        # --- if old and new is None
-
-    return DiffTuple(equal_count=equal_count,
-                     mod_count=mod_count,
-                     add_count=add_count,
-                     sub_count=sub_count,
-                     diff=dlist
-                     )
-
-
-def compare_pages(old_hist: Iterable[list],
-                  new_hist: Iterable[list],
-                  header_old: Iterable[list],
-                  header_new: Iterable[list],
-                  all_columns: bool,
-                  exclude_columns: Iterable[list]) -> Iterable[list]:
-
-    utils.log('<{old} ({nrevold}), {new} ({nrevnew})> '
-              .format(old=old_hist[0]['page'].data['page_title'],
-                      new=new_hist[0]['page'].data['page_title'],
-                      nrevold=len(old_hist),
-                      nrevnew=len(new_hist)
-                      )
-              )
-
-    i = 0
-    j = 0
-
-    difflist = []
-    while (i < len(old_hist) or j < len(new_hist)):
-
-        lineno_old, old = (None, None)
-        lineno_new, new = (None, None)
-        if i < len(old_hist):
-            lineno_old, old = old_hist[i]['lineno'], old_hist[i]['page']
-        if j < len(new_hist):
-            lineno_new, new = new_hist[j]['lineno'], new_hist[j]['page']
-
-        if old and i % NPRINTREVISION == 0:
-            print('.', end='', file=sys.stderr, flush=True)
-        if new and j % NPRINTREVISION == 0:
-            print(':', end='', file=sys.stderr, flush=True)
-
-        # equal_count, mod_count, add_count, sub_count, i_j_diff
-        i_j_tuple = compute_diff(lineno_old=lineno_old,
-                                 old=old,
-                                 lineno_new=lineno_new,
-                                 new=new,
-                                 all_columns=all_columns,
-                                 exclude_columns=exclude_columns
+    for atype, diff in differences.items():
+        for keystr, data in diff.items():
+            keynum = int(root_re.search(keystr).group(1))
+            if atype == 'iterable_item_removed':
+                sub_count += 1
+                difflist.append(('-', 
+                                 old_hist[keynum]['lineno'],
+                                 data
                                  )
+                                )
 
-        thediff = i_j_tuple
-        if i_j_tuple.diff:
-            diffset = False
+            elif atype == 'iterable_item_added':
+                add_count += 1
+                # import ipdb; ipdb.set_trace();
+                difflist.append(('+',
+                                 new_hist[keynum]['lineno'],
+                                 data
+                                 )
+                                )
 
-            lineno_new_prev, new_prev = (None, None)
-            if j > 0 and j-1 < len(new_hist):
-                lineno_new_prev, new_prev = \
-                    new_hist[j-1]['lineno'], new_hist[j-1]['page']
+            else:
+                import ipdb; ipdb.set_trace()
 
-
-            lineno_old_prev, old_prev = (None, None)
-            if i > 0 and i-1 < len(old_hist):
-                lineno_old_prev, old_prev = \
-                    old_hist[i-1]['lineno'], old_hist[i-1]['page']
-
-            lineno_new_post, new_post = (None, None)
-            if j+1 < len(new_hist):
-                lineno_new_post, new_post = \
-                    new_hist[j+1]['lineno'], new_hist[j+1]['page']
-
-            lineno_old_post, old_post = (None, None)
-            if i+1 < len(old_hist):
-                lineno_old_post, old_post = \
-                    old_hist[i+1]['lineno'], old_hist[i+1]['page']
-
-
-            # equal_count, mod_count, add_count, sub_count, i_jm_diff
-            i_jm_tuple = compute_diff(lineno_old=lineno_old,
-                                      old=old,
-                                      lineno_new=lineno_new_prev,
-                                      new=new_prev,
-                                      all_columns=all_columns,
-                                      exclude_columns=exclude_columns
-                                      )
-
-            # equal_count, mod_count, add_count, sub_count, i_jm_diff
-            im_j_tuple = compute_diff(lineno_old=lineno_old_prev,
-                                      old=old_prev,
-                                      lineno_new=lineno_new,
-                                      new=new,
-                                      all_columns=all_columns,
-                                      exclude_columns=exclude_columns
-                                      )
-
-            i_jp_tuple = compute_diff(lineno_old=lineno_old,
-                                      old=old,
-                                      lineno_new=lineno_new_post,
-                                      new=new_post,
-                                      all_columns=all_columns,
-                                      exclude_columns=exclude_columns
-                                      )
-
-            ip_j_tuple = compute_diff(lineno_old=lineno_old_post,
-                                      old=old_post,
-                                      lineno_new=lineno_new,
-                                      new=new,
-                                      all_columns=all_columns,
-                                      exclude_columns=exclude_columns
-                                      )
-
-            diff_tuples = {'i,j-1': i_jm_tuple,
-                           'i-1,j': im_j_tuple,
-                           'i,j+1': i_jp_tuple,
-                           'i+1,j': ip_j_tuple,
-                           }
-
-            for atype, dt in diff_tuples.items():
-                if not dt.diff:
-                    if atype == 'i+1,j':
-                        thediff = DiffTuple(
-                            equal_count=ip_j_tuple.equal_count,
-                            mod_count=ip_j_tuple.mod_count,
-                            add_count=ip_j_tuple.add_count,
-                            sub_count=ip_j_tuple.sub_count,
-                            diff=[('-', lineno_old, old.data)]
-                            )
-                        i = i + 1
-                    elif atype == 'i,j+1':
-                        thediff = DiffTuple(
-                            equal_count=i_jp_tuple.equal_count,
-                            mod_count=i_jp_tuple.mod_count,
-                            add_count=i_jp_tuple.add_count,
-                            sub_count=i_jp_tuple.sub_count,
-                            diff=[('+', lineno_new, new.data)]
-                            )
-                        j = j + 1
-                    else:
-                        import ipdb; ipdb.set_trace()
-                    diffset = True
-
-            if not diffset:
-                thediff = i_j_tuple
-                diffset = True
-
-        # else:
-        # no difference (i -- j)
-
-        difflist = difflist + thediff.diff
-
-        i = i + 1
-        j = j + 1
+    equal_count = min(len(old_hist),len(new_hist)) - add_count - sub_count
 
     # print string
     diff_string = ('={equal},~{mod},-{sub},+{add}'
-                   .format(equal=thediff.equal_count,
-                           mod=thediff.mod_count,
-                           add=thediff.add_count,
-                           sub=thediff.sub_count)
+                   .format(equal=equal_count,
+                           mod=mod_count,
+                           add=add_count,
+                           sub=sub_count)
                    )
     print(' ({})'.format(diff_string), file=sys.stderr, flush=True)
 
     if difflist:
-        for diff in difflist:
+        for diff in sorted(difflist, key=operator.itemgetter(1)):
             yield diff
 
 
@@ -809,9 +640,8 @@ def configure_subparsers(subparsers):
         '-s',
         '--sort-columns',
         type=str,
-        default='lineno,revision_timestamp',
         help='List of comma-separated column names to use to sort the '
-             'dumps when comparing [default: lineno,revision_timestamp].'
+             'dumps when comparing.'
     )
     parser.add_argument(
         '--only-last-revision',
