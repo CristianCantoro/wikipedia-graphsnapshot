@@ -178,6 +178,7 @@ def process_pages(dump: Iterable[list],
     lineno = 1
 
     custom_sort = sort_revisions(sort_columns)
+    timestamp_sort = sort_revisions('revision_timestamp')
 
     while True:
 
@@ -277,7 +278,10 @@ def process_pages(dump: Iterable[list],
 
             # sort all the revision by timestamp (they are not guaranted to be
             # ordered)
-            sorted_revisions = sorted(revisions, key=custom_sort)
+            if sort_columns:
+                sorted_revisions = sorted(revisions, key=custom_sort)
+            else:
+                sorted_revisions = revisions
 
             # if we only want the sorted_revisions list is limited to the
             # last element.
@@ -290,7 +294,8 @@ def process_pages(dump: Iterable[list],
             # all revisions will be in the correct order, so we still need to
             # collect them all, sort them and take the last one.
             if only_last_revision:
-                sorted_revisions = [sorted_revisions[-1]]
+                sorted_revisions = \
+                    [sorted(revisions, key=timestamp_sort)[-1]]
 
             yield sorted_revisions
             del sorted_revisions
