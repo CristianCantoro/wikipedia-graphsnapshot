@@ -25,6 +25,7 @@ from typing import (Iterable, Iterator, Mapping, NamedTuple, Optional,
 import regex
 import operator
 import more_itertools
+import copy
 from deepdiff import DeepDiff
 
 from .. import utils
@@ -337,6 +338,7 @@ def get_header(dump: Iterable[list]) -> Iterable[list]:
 
 
 root_re = regex.compile(r'root\[(\d+)\]')
+field_re = regex.compile(r'root\[\d+\]\[\'(.+)\'\]')
 
 
 def compare_pages(old_hist: Iterable[list],
@@ -388,29 +390,56 @@ def compare_pages(old_hist: Iterable[list],
 
 
     for atype, diff in differences.items():
-        for keystr, data in diff.items():
+        if atype == 'iterable_item_removed' or \
+                atype == 'iterable_item_added':
+            for keystr, data in diff.items():
+                keynum = int(root_re.search(keystr).group(1))
+                if atype == 'iterable_item_removed':
+                    sub_count += 1
+                    difflist.append(('-',
+                                     old_hist[keynum]['lineno'],
+                                     data
+                                     )
+                                    )
+
+                elif atype == 'iterable_item_added':
+                    add_count += 1
+                    difflist.append(('+',
+                                     new_hist[keynum]['lineno'],
+                                     data
+                                     )
+                                    )
+        elif atype == 'values_changed':
+            keystr = list(diff.keys())[0]
             keynum = int(root_re.search(keystr).group(1))
-            if atype == 'iterable_item_removed':
-                sub_count += 1
-                difflist.append(('-', 
-                                 old_hist[keynum]['lineno'],
-                                 data
-                                 )
-                                )
+            old_data = old_hist[keynum]['page'].data
+            new_data = copy.deepcopy(old_data)
 
-            elif atype == 'iterable_item_added':
-                add_count += 1
-                # import ipdb; ipdb.set_trace();
-                difflist.append(('+',
-                                 new_hist[keynum]['lineno'],
-                                 data
-                                 )
-                                )
+            for keystr, data in diff.items():
+                field = field_re.search(keystr).group(1)
 
-            else:
-                import ipdb; ipdb.set_trace()
+                new_data[field] = diff[keystr]['new_value']
 
-    equal_count = min(len(old_hist),len(new_hist)) - add_count - sub_count
+            mod_count += 1
+            difflist.append(('-',
+                             old_hist[keynum]['lineno'],
+                             old_data
+                             )
+                            )
+            difflist.append(('+',
+                             old_hist[keynum]['lineno'],
+                             new_data
+                             )
+                            )
+
+        else:
+            import ipdb; ipdb.set_trace()
+
+    equal_count = (min(len(old_hist),len(new_hist))
+                   - add_count
+                   - sub_count
+                   - mod_count
+                   )
 
     # print string
     diff_string = ('={equal},~{mod},-{sub},+{add}'
@@ -527,6 +556,7 @@ def process_dumps(
                                      header_new=header_new,
                                      all_columns=all_columns,
                                      exclude_columns=exclude_columns,
+                                     ignore_order=False if sort_columns else True,
                                      )
 
             yield difflist

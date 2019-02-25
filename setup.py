@@ -24,6 +24,7 @@ setup(
     install_requires=[
         'arrow==0.7.0',
         'compressed-stream==0.0.2',
+        'deepdiff==3.3.0',
         'jsonable==0.3.1',
         'Mako==1.0.2',
         'MarkupSafe==0.23',
