@@ -116,6 +116,11 @@ stats_template = '''
             <revisions_analyzed>${stats['performance']['old']['revisions_analyzed'] | x}</revisions_analyzed>
         </old>
     </performance>
+    <changes>
+        <pages>${stats['changes']['pages'] | x}</pages>
+        <additions>${stats['changes']['additions'] | x}</additions>
+        <deletions>${stats['changes']['deletions'] | x}</deletions>
+    </changes>
 </stats>
 '''
 
@@ -883,6 +888,11 @@ def main(
                 'revisions_analyzed': 0,
                 'lines': 0
             }
+        },
+        'changes': {
+            'pages': 0,
+            'additions': 0,
+            'deletions': 0
         }
     }
     stats['performance']['start_time'] = datetime.datetime.utcnow()
@@ -1001,8 +1011,12 @@ def main(
 
     exit_flag = False
     for difflist in difflist_generator:
+        has_diff = False
+
         for diff in difflist:
             if diff:
+                has_diff = True
+
                 change = diff[0]
                 lineno = diff[1]
                 changedata = diff[2]
@@ -1024,11 +1038,20 @@ def main(
 
                 writer.writerow(data)
 
+                if change == '+':
+                    stats['changes']['additions'] += 1
+                elif change == '-':
+                    stats['changes']['deletions'] += 1
+
                 if args.exit_on_diff:
                     exit_flag = True
             else:
                 # empty diff
                 pass
+
+        if has_diff:
+            stats['changes']['pages'] += 1
+            # import ipdb; ipdb.set_trace()
 
         if args.exit_on_diff and exit_flag:
             utils.log("Exit on diff. Exiting.")
