@@ -802,7 +802,6 @@ def configure_subparsers(subparsers):
         '-x',
         '--exclude-columns',
         type=str,
-        default='revision_timestamp',
         help='List of comma-separated column names to exclude from the '
              'comparison.'
     )
