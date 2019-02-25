@@ -20,7 +20,7 @@ import functools
 import collections
 from io import StringIO
 from typing import (Iterable, Iterator, Mapping, NamedTuple, Optional,
-                    Callable)
+                    Callable, Tuple)
 
 import more_itertools
 
@@ -102,6 +102,21 @@ Chunkfile = NamedTuple('Chunkfile', [
 ])
 
 
+# - DiffTuple
+#   - equal_count
+#   - mod_count
+#   - add_count
+#   - sub_count
+#   - diff
+DiffTuple = NamedTuple('DiffTuple', [
+    ('equal_count', int),
+    ('mod_count', int),
+    ('add_count', int),
+    ('sub_count', int),
+    ('diff', Tuple),
+])
+
+
 stats_template = '''
 <stats>
     <performance>
@@ -143,14 +158,14 @@ def sort_revisions(
         keys = []
         for col in sort_columns:
             if col == 'revision_timestamp':
-                keys.append(rev[1].timestamp)
+                keys.append(rev['page'].timestamp)
             elif col == 'page_id':
-                keys.append(rev[1].id)
+                keys.append(rev['page'].id)
             elif col == 'lineno':
-                keys.append(rev[0])
+                keys.append(rev['lineno'])
             else:
-                keys.append(rev[1].data[col])
-        keys.append(rev[0])
+                keys.append(rev['page'].data[col])
+        keys.append(rev['lineno'])
 
         return keys
 
@@ -262,7 +277,7 @@ def process_pages(dump: Iterable[list],
                     progress(':')
 
             if page.timestamp <= max_timestamp:
-                revisions.append( (lineno, page) )
+                revisions.append( { 'lineno': lineno, 'page': page } )
                 stats['revisions_analyzed'] += 1
 
             prevpage = page
@@ -322,7 +337,7 @@ def process_pages(dump: Iterable[list],
             # we are not interested to the new page for the moment, put it in
             # the list
             prevpage = page
-            revisions = [ (lineno, page) ]
+            revisions = [ { 'lineno': lineno, 'page': page } ]
 
 
 def get_header(dump: Iterable[list]) -> Iterable[list]:
@@ -372,6 +387,56 @@ def compare_data(old_data: Mapping,
     return equal_dicts(old_data, new_data, columns_to_compare)
 
 
+def compute_diff(lineno_old: int,
+                 old: Iterable[list],
+                 lineno_new: int,
+                 new: Iterable[list],
+                 all_columns: bool,
+                 exclude_columns: Iterable[list]
+                 ) -> Tuple[int, int, int, int, Iterable[list]]:
+
+    equal_count = 0
+    mod_count = 0
+    add_count = 0
+    sub_count = 0
+    dlist = []
+    if old and new:
+        if compare_data(old_data=old.data,
+                        new_data=new.data,
+                        all_columns=all_columns,
+                        exclude_columns=exclude_columns):
+            # old == new:
+            equal_count = equal_count + 1
+            # --- if old and new and old == new
+
+        else:
+            # old != new:
+            mod_count = mod_count + 1
+
+            dlist.append( ('-', lineno_old, old.data) )
+            dlist.append( ('+', lineno_new, new.data) )
+            # --- if old and new and old != new
+
+    if new and old is None:
+        add_count = add_count + 1
+
+        dlist.append( ('+', lineno_new, new.data) )
+        # --- if new and old is None
+
+    if old and new is None:
+        sub_count = sub_count + 1
+
+        dlist.append( ('-', lineno_old, old.data) )
+        # --- if old and new is None
+
+    return DiffTuple(equal_count=equal_count,
+                     mod_count=mod_count,
+                     add_count=add_count,
+                     sub_count=sub_count,
+                     diff=dlist
+                     )
+
+
 def compare_pages(old_hist: Iterable[list],
                   new_hist: Iterable[list],
                   header_old: Iterable[list],
@@ -380,8 +445,8 @@ def compare_pages(old_hist: Iterable[list],
                   exclude_columns: Iterable[list]) -> Iterable[list]:
 
     utils.log('<{old} ({nrevold}), {new} ({nrevnew})> '
-              .format(old=old_hist[0][1].data['page_title'],
-                      new=new_hist[0][1].data['page_title'],
+              .format(old=old_hist[0]['page'].data['page_title'],
+                      new=new_hist[0]['page'].data['page_title'],
                       nrevold=len(old_hist),
                       nrevnew=len(new_hist)
                       )
@@ -390,58 +455,138 @@ def compare_pages(old_hist: Iterable[list],
     i = 0
     j = 0
 
-    equal_count = 0
-    mod_count = 0
-    add_count = 0
-    sub_count = 0
     difflist = []
     while (i < len(old_hist) or j < len(new_hist)):
-        lineno, old = old_hist[i] if i < len(old_hist) else (None, None)
-        lineno, new = new_hist[j] if j < len(new_hist) else (None, None)
+
+        lineno_old, old = (None, None)
+        lineno_new, new = (None, None)
+        if i < len(old_hist):
+            lineno_old, old = old_hist[i]['lineno'], old_hist[i]['page']
+        if j < len(new_hist):
+            lineno_new, new = new_hist[j]['lineno'], new_hist[j]['page']
 
         if old and i % NPRINTREVISION == 0:
             print('.', end='', file=sys.stderr, flush=True)
         if new and j % NPRINTREVISION == 0:
             print(':', end='', file=sys.stderr, flush=True)
 
-        if old and new:
-            if compare_data(old_data=old.data,
-                            new_data=new.data,
-                            all_columns=all_columns,
-                            exclude_columns=exclude_columns):
-                # old == new:
-                equal_count = equal_count + 1
-                # --- if old and new and old == new
+        # equal_count, mod_count, add_count, sub_count, i_j_diff
+        i_j_tuple = compute_diff(lineno_old=lineno_old,
+                                 old=old,
+                                 lineno_new=lineno_new,
+                                 new=new,
+                                 all_columns=all_columns,
+                                 exclude_columns=exclude_columns
+                                 )
 
-            else:
-                # old != new:
-                mod_count = mod_count + 1
+        thediff = i_j_tuple
+        if i_j_tuple.diff:
+            diffset = False
 
-                difflist.append( ('-', lineno, old.data) )
-                difflist.append( ('+', lineno, new.data) )
-                # --- if old and new and old != new
+            lineno_new_prev, new_prev = (None, None)
+            if j > 0 and j-1 < len(new_hist):
+                lineno_new_prev, new_prev = \
+                    new_hist[j-1]['lineno'], new_hist[j-1]['page']
 
-        if new and old is None:
-            add_count = add_count + 1
 
-            difflist.append( ('+', lineno, new.data) )
-            # --- if new and old is None
+            lineno_old_prev, old_prev = (None, None)
+            if i > 0 and i-1 < len(old_hist):
+                lineno_old_prev, old_prev = \
+                    old_hist[i-1]['lineno'], old_hist[i-1]['page']
 
-        if old and new is None:
-            sub_count = sub_count + 1
+            lineno_new_post, new_post = (None, None)
+            if j+1 < len(new_hist):
+                lineno_new_post, new_post = \
+                    new_hist[j+1]['lineno'], new_hist[j+1]['page']
 
-            difflist.append( ('-', lineno, old.data) )
-            # --- if old and new is None
+            lineno_old_post, old_post = (None, None)
+            if i+1 < len(old_hist):
+                lineno_old_post, old_post = \
+                    old_hist[i+1]['lineno'], old_hist[i+1]['page']
+
+
+            # equal_count, mod_count, add_count, sub_count, i_jm_diff
+            i_jm_tuple = compute_diff(lineno_old=lineno_old,
+                                      old=old,
+                                      lineno_new=lineno_new_prev,
+                                      new=new_prev,
+                                      all_columns=all_columns,
+                                      exclude_columns=exclude_columns
+                                      )
+
+            # equal_count, mod_count, add_count, sub_count, i_jm_diff
+            im_j_tuple = compute_diff(lineno_old=lineno_old_prev,
+                                      old=old_prev,
+                                      lineno_new=lineno_new,
+                                      new=new,
+                                      all_columns=all_columns,
+                                      exclude_columns=exclude_columns
+                                      )
+
+            i_jp_tuple = compute_diff(lineno_old=lineno_old,
+                                      old=old,
+                                      lineno_new=lineno_new_post,
+                                      new=new_post,
+                                      all_columns=all_columns,
+                                      exclude_columns=exclude_columns
+                                      )
+
+            ip_j_tuple = compute_diff(lineno_old=lineno_old_post,
+                                      old=old_post,
+                                      lineno_new=lineno_new,
+                                      new=new,
+                                      all_columns=all_columns,
+                                      exclude_columns=exclude_columns
+                                      )
+
+            diff_tuples = {'i,j-1': i_jm_tuple,
+                           'i-1,j': im_j_tuple,
+                           'i,j+1': i_jp_tuple,
+                           'i+1,j': ip_j_tuple,
+                           }
+
+            for atype, dt in diff_tuples.items():
+                if not dt.diff:
+                    if atype == 'i+1,j':
+                        thediff = DiffTuple(
+                            equal_count=ip_j_tuple.equal_count,
+                            mod_count=ip_j_tuple.mod_count,
+                            add_count=ip_j_tuple.add_count,
+                            sub_count=ip_j_tuple.sub_count,
+                            diff=[('-', lineno_old, old.data)]
+                            )
+                        i = i + 1
+                    elif atype == 'i,j+1':
+                        thediff = DiffTuple(
+                            equal_count=i_jp_tuple.equal_count,
+                            mod_count=i_jp_tuple.mod_count,
+                            add_count=i_jp_tuple.add_count,
+                            sub_count=i_jp_tuple.sub_count,
+                            diff=[('+', lineno_new, new.data)]
+                            )
+                        j = j + 1
+                    else:
+                        import ipdb; ipdb.set_trace()
+                    diffset = True
+
+            if not diffset:
+                thediff = i_j_tuple
+                diffset = True
+
+        # else:
+        # no difference (i -- j)
+
+        difflist = difflist + thediff.diff
 
         i = i + 1
         j = j + 1
 
     # print string
     diff_string = ('={equal},~{mod},-{sub},+{add}'
-                   .format(equal=equal_count,
-                           mod=mod_count,
-                           add=add_count,
-                           sub=sub_count)
+                   .format(equal=thediff.equal_count,
+                           mod=thediff.mod_count,
+                           add=thediff.add_count,
+                           sub=thediff.sub_count)
                    )
     print(' ({})'.format(diff_string), file=sys.stderr, flush=True)
 
@@ -507,11 +652,11 @@ def process_dumps(
             newpagehist = next(new_generator)
             new_head = newpagehist[0]
 
-        old_pageid = old_head[1].id
-        new_pageid = new_head[1].id
+        old_pageid = old_head['page'].id
+        new_pageid = new_head['page'].id
 
-        old_pagetitle = old_head[1].data['page_title']
-        new_pagetitle = new_head[1].data['page_title']
+        old_pagetitle = old_head['page'].data['page_title']
+        new_pagetitle = new_head['page'].data['page_title']
 
         if old_pageid < new_pageid:
             symbol = '<'
