@@ -22,7 +22,7 @@ setup(
         ],
     },
     install_requires=[
-        'arrow==0.7.0',
+        'arrow==0.13.1',
         'compressed-stream==0.0.2',
         'deepdiff==3.3.0',
         'jsonable==0.3.1',
@@ -34,7 +34,7 @@ setup(
         'mwparserfromhell==0.4.2',
         'mwtypes==0.2.0',
         'mwxml==0.2.0',
-        'regex==2018.8.17',
+        'regex==2019.2.21',
         'more-itertools==6.0.0',
         'fuzzywuzzy==0.8.0',
         'python-Levenshtein==0.12.0',
