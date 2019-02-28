@@ -392,13 +392,13 @@ def compute_diff(lineno_old: int,
                  lineno_new: int,
                  new: Iterable[list],
                  all_columns: bool,
-                 exclude_columns: Iterable[list]
+                 exclude_columns: Iterable[list],
+                 equal_count: Optional[int]=0,
+                 mod_count: Optional[int]=0,
+                 add_count: Optional[int]=0,
+                 sub_count: Optional[int]=0
                  ) -> Tuple[int, int, int, int, Iterable[list]]:
 
-    equal_count = 0
-    mod_count = 0
-    add_count = 0
-    sub_count = 0
     dlist = []
     if old and new:
         if compare_data(old_data=old.data,
@@ -455,6 +455,11 @@ def compare_pages(old_hist: Iterable[list],
     i = 0
     j = 0
 
+    equal_count = 0
+    mod_count = 0
+    add_count = 0
+    sub_count = 0
+
     difflist = []
     while (i < len(old_hist) or j < len(new_hist)):
 
@@ -476,7 +481,11 @@ def compare_pages(old_hist: Iterable[list],
                                  lineno_new=lineno_new,
                                  new=new,
                                  all_columns=all_columns,
-                                 exclude_columns=exclude_columns
+                                 exclude_columns=exclude_columns,
+                                 equal_count=equal_count,
+                                 mod_count=mod_count,
+                                 add_count=add_count,
+                                 sub_count=sub_count
                                  )
 
         thediff = i_j_tuple
@@ -577,6 +586,11 @@ def compare_pages(old_hist: Iterable[list],
         # no difference (i -- j)
 
         difflist = difflist + thediff.diff
+
+        equal_count = thediff.equal_count
+        mod_count = thediff.mod_count
+        add_count = thediff.add_count
+        sub_count = thediff.sub_count
 
         i = i + 1
         j = j + 1
