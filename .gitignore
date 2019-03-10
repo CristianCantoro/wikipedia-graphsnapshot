@@ -1,4 +1,5 @@
 # ignore inpunt/output directory, logs directory and misc
+input
 input/*
 output/*
 logs/*
